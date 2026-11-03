@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/vault",
+    "crates/engine",
+    "crates/driver-pw",
+    "crates/mock-site",
+    "spike",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+[workspace.dependencies]
+# Pinned exactly: playwright-rs is pre-1.0 and bundles a specific Playwright
+# server version. Upgrade on purpose, then re-run the mock-site suite.
+playwright-rs = "=0.20.1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }

@@ -1,0 +1,20 @@
+[package]
+name = "netlaunch-spike"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "M1 throwaway: launch Edge, attach with playwright-rs, fill forms, test release vs managed."
+
+[[bin]]
+name = "spike"
+path = "src/main.rs"
+
+[dependencies]
+playwright-rs.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-registry = "0.5"

@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Spike: plain form</title>
+</head>
+<body>
+  <!-- A classic HTML form: the browser posts it and navigates to the result
+       page. Stands in for simple router and switch login pages. -->
+  <h1>Plain form</h1>
+  <form method="post" action="/plain/login">
+    <label>Username <input id="username" name="username" type="text" autocomplete="username"></label>
+    <label>Password <input id="password" name="password" type="password" autocomplete="current-password"></label>
+    <button type="submit">Sign in</button>
+  </form>
+</body>
+</html>

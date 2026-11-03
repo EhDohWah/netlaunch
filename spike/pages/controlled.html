@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Spike: controlled form</title>
+</head>
+<body>
+  <!-- Mimics a React/Vue "controlled" form such as the UniFi login.
+       The page keeps its own copy of what was typed and only updates it on
+       `input` events. On submit it sends that copy, not the DOM values.
+       A fill that sets `input.value` without firing `input` events leaves
+       the copy empty, so the login fails. Playwright's fill should pass. -->
+  <h1>Controlled form</h1>
+  <form id="login">
+    <label>Username <input id="username" type="text" autocomplete="username"></label>
+    <label>Password <input id="password" type="password" autocomplete="current-password"></label>
+    <button type="submit">Sign in</button>
+  </form>
+  <p id="result" hidden></p>
+  <script>
+    const state = { username: '', password: '' };
+    for (const field of ['username', 'password']) {
+      document.getElementById(field).addEventListener('input', (event) => {
+        state[field] = event.target.value;
+      });
+    }
+
+    document.getElementById('login').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const response = await fetch('/controlled/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(state).toString(),
+      });
+      const { ok } = await response.json();
+      const result = document.getElementById('result');
+      result.textContent = ok ? `Logged in as ${state.username}` : 'Wrong username or password';
+      result.dataset.ok = String(ok);
+      result.hidden = false;
+    });
+  </script>
+</body>
+</html>
