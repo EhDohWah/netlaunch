@@ -114,7 +114,11 @@ Find Edge through the registry (`HKLM`, then `HKCU`, `SOFTWARE\Microsoft\Windows
 - **Steps 1–5 pass on Windows with Edge 155** (Nov 4, 2026), in both released and managed modes.
 - **That run found the isolation problem above.** The second run, with isolation, removed the synced favorites, synced extensions, extra tabs and password saving.
 - **Edge still signs the profile in to the Windows account** (implicit sign-in). No command-line switch stops it; only the `ImplicitSignInEnabled` policy does. With sync and extensions off, what remains is single sign-on to Microsoft sites in that window. See open decision 9.
-- A third Windows run checks which extensions actually run (`Target.getTargets`) and where the sign-in is recorded. It closes M1.
+- **The third Windows run closes M1** (Nov 4, 2026). With isolation on, every check passes except sign-in:
+  - no extra tabs and no running extensions
+  - password saving off
+  - clean quit, and the profile deletes afterwards
+- **The sign-in sits at `account_info[0].email`.** That's Chromium's list of signed-in accounts, which confirms Edge's implicit sign-in.
 
 ## Architecture
 
@@ -315,7 +319,7 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
 | 6 | Session cookies | Fresh profile each launch · persistent profile per site | Fresh by default, persistent as a per-site option | M5 |
 | 7 | Frontend | Vue 3 + Vite · plain HTML/JS | Vue 3 + Vite | M4 |
 | 8 | Encrypt usernames too | Yes · no | No (keeps search and display simple) | M3 |
-| 9 | Edge's implicit sign-in in the login window | Accept it (sync and extensions are off) · set `ImplicitSignInEnabled` = 0 for the user (also affects new profiles in the admin's own Edge) · detect it and warn | Pending the third Windows run, which shows where the sign-in is recorded | M5 |
+| 9 | Edge's implicit sign-in in the login window | Accept it (sync and extensions are off) · set `ImplicitSignInEnabled` = 0 for the user (also affects new profiles in the admin's own Edge) · detect it and warn | Confirmed by the third Windows run (`account_info[0].email`). Recommendation: accept it and show a warning in the session panel when the window is signed in | M5 |
 
 ## Risks
 

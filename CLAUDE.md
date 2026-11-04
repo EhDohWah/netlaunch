@@ -6,8 +6,9 @@ NetLaunch is a Windows desktop app (Rust + Tauri) that stores admin console logi
 
 ## Status
 
-- **M1 browser spike:** the attach, release and managed-close checks pass on Windows/Edge 155. The isolation switches removed sync, extensions and password saving. Edge's implicit sign-in remains (open decision 9).
-- A third Windows run, checking which extensions actually run, is pending.
+- **M1 browser spike: done** (Windows 11, Edge 155). Attach, release and managed close all work, and the isolation switches stop sync, extensions and password saving.
+- Edge's implicit sign-in to the Windows account remains (`account_info[0].email`; open decision 9).
+- **Next: M2** (mock login site).
 - **Everything else** (vault, engine, driver, mock site, Tauri app) is a placeholder crate.
 
 ## Commands

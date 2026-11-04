@@ -107,7 +107,22 @@ Isolation mostly worked:
 
 No Edge policies are set on that PC. The remaining email field comes from Edge's implicit sign-in to the Windows account, which only the `ImplicitSignInEnabled` policy can turn off. The same 25 unnamed entries appear with or without isolation, so they don't come from sync; they're probably Edge's own.
 
-The spike's extension check was replaced after this run. Prefs entries can't tell installed extensions from built-in ones (a command-line test extension had no name in its entry either), so the check now asks the browser which extensions are running (`Target.getTargets`). The profile list is info only. The spike also now prints the JSON path of each email field (never the address) and adds `SwitchIntranetSitesToWorkProfile` to the disabled features. A third Windows run is pending.
+The spike's extension check was replaced after this run. Prefs entries can't tell installed extensions from built-in ones (a command-line test extension had no name in its entry either), so the check now asks the browser which extensions are running (`Target.getTargets`). The profile list is info only. The spike also now prints the JSON path of each email field (never the address) and adds `SwitchIntranetSitesToWorkProfile` to the disabled features.
+
+### Windows 11, Edge 155 (Nov 4, 2026, third run: M1 done)
+
+Isolated managed run. Everything passes except the sign-in check:
+
+| Check | Result |
+|---|---|
+| Debug port, attach, both form logins, password absent from log | PASS |
+| No extra tabs | PASS |
+| No extensions running (`Target.getTargets`) | PASS: no extension targets |
+| Clean quit via CDP `Browser.close`, profile deletable | PASS |
+| Password saving off | PASS |
+| Extension entries in the profile | none |
+| No account signed in | FAIL: `account_info[0].email`, Chromium's list of signed-in accounts, so this is Edge's implicit sign-in to the Windows account (open decision 9) |
+
 
 ### Linux container, Chromium 153, headless, hand-assembled driver
 
