@@ -93,7 +93,21 @@ The screenshots showed what the checks didn't cover. The "fresh" profile wasn't 
 - Synced extensions (a translator, Wappalyzer) were installed and opened their own tabs.
 - Edge showed its password key icon after the login.
 
-The spike now launches Edge with isolation switches and seeded preferences (`edge::isolation_args`, `edge::seed_preferences`), and checks for all of this. A Windows run of the new version is pending.
+### Windows 11, Edge 155 (Nov 4, 2026, second run, with isolation)
+
+Isolation mostly worked:
+
+| | Isolated | `--no-isolation` |
+|---|---|---|
+| Extra tabs | none | `edge://sync-confirmation-dialog` and the TWP extension's tab |
+| Favorites bar (screenshot) | gone | present |
+| Email fields in the profile | 1 | 2 |
+| Extension entries in the profile | 25, none named | 29, including TWP, uBlock Origin and Google Docs Offline |
+| Password saving | off | not set (Edge default: on) |
+
+No Edge policies are set on that PC. The remaining email field comes from Edge's implicit sign-in to the Windows account, which only the `ImplicitSignInEnabled` policy can turn off. The same 25 unnamed entries appear with or without isolation, so they don't come from sync; they're probably Edge's own.
+
+The spike's extension check was replaced after this run. Prefs entries can't tell installed extensions from built-in ones (a command-line test extension had no name in its entry either), so the check now asks the browser which extensions are running (`Target.getTargets`). The profile list is info only. The spike also now prints the JSON path of each email field (never the address) and adds `SwitchIntranetSitesToWorkProfile` to the disabled features. A third Windows run is pending.
 
 ### Linux container, Chromium 153, headless, hand-assembled driver
 
@@ -104,4 +118,5 @@ The spike now launches Edge with isolation switches and seeded preferences (`edg
 | Password absent from log at `trace` | **FAIL, as expected**: the password appears in the log |
 | Released via `Browser::close` or driver shutdown | PASS: browser alive, logged-in tab still open after the spike exited |
 | Managed: clean quit via CDP `Browser.close`, profile deletable | PASS |
-| Isolation checks (extra tabs, account, extensions, password saving) | PASS with isolation. Without it only "password saving off" fails, because the container has no account to sync. |
+| Isolation checks (extra tabs, account, password saving) | PASS with isolation. Without it only "password saving off" fails, because the container has no account to sync. |
+| "No extensions running", with a test extension loaded via `--load-extension` | Without isolation: FAIL, lists the test extension and 2 Chromium built-ins. With isolation: PASS, nothing runs. |

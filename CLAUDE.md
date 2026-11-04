@@ -6,7 +6,8 @@ NetLaunch is a Windows desktop app (Rust + Tauri) that stores admin console logi
 
 ## Status
 
-- **M1 browser spike:** passed on Windows/Edge 155. That run found that new profiles weren't isolated. The spike now adds isolation, and a second Windows run is pending.
+- **M1 browser spike:** the attach, release and managed-close checks pass on Windows/Edge 155. The isolation switches removed sync, extensions and password saving. Edge's implicit sign-in remains (open decision 9).
+- A third Windows run, checking which extensions actually run, is pending.
 - **Everything else** (vault, engine, driver, mock site, Tauri app) is a placeholder crate.
 
 ## Commands
@@ -54,7 +55,8 @@ These come from the spec's security section. Treat a change that breaks one as a
 - **NetLaunch launches Edge itself, never playwright-rs.**
   - Each site session gets its own profile folder and `--remote-debugging-port=0`. NetLaunch reads the port from `DevToolsActivePort` and attaches with `connect_over_cdp`.
   - Always add `edge::isolation_args()` and seed the profile's preferences (password saving off). Without them, Edge on a work PC signs the new profile in to the Windows account, syncs it and loads synced extensions next to the password field.
-  - Policies override switches, so check the result: no extra tabs, no signed-in account, no user extensions.
+  - Policies override switches, so check the result: no extra tabs, no running extensions (CDP `Target.getTargets` with `filter: [{}]`; playwright-rs wraps the reply in `result`), no signed-in account.
+  - The profile's `extensions.settings` can't tell installed extensions from Edge's own entries. Don't use it as a pass/fail check.
   - Use the browser's default context and its `about:blank` tab (found by URL, not position), not `new_context()`.
   - One Edge process per site session, because `--ignore-certificate-errors` is process-wide and must only apply to self-signed sites.
 - **Managed close** sends the CDP `Browser.close` command (a clean quit), then kills the Edge process NetLaunch started if it is still running after 10 s. Releasing means playwright-rs `Browser::close()` (for an attached browser this only disconnects) plus stopping the driver.

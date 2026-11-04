@@ -67,8 +67,10 @@ pub fn isolation_args() -> Vec<String> {
         "--disable-extensions",
         "--disable-component-extensions-with-background-pages",
         "--disable-default-apps",
-        // Edge-only: stop Edge forcing a sign-in on the new profile.
-        "--disable-features=msForceBrowserSignIn",
+        // Edge-only, both: stop Edge forcing a sign-in on the new profile,
+        // and stop it moving intranet URLs (such as 10.x consoles) into the
+        // admin's "Work" profile window, away from the automated one.
+        "--disable-features=msForceBrowserSignIn,SwitchIntranetSitesToWorkProfile",
         // Edge on Windows can relaunch itself, which would replace the
         // process we track (and close later) with one we do not know about.
         "--edge-skip-compat-layer-relaunch",
@@ -217,13 +219,22 @@ pub fn wait_for_exit(child: &mut Child, timeout: Duration) -> bool {
 /// which Edge only writes completely when it shuts down cleanly.
 #[derive(Debug, Default)]
 pub struct ProfileFacts {
-    /// Number of `email` fields with an address in them. The addresses
-    /// themselves are never printed.
-    pub account_emails: usize,
-    /// `id (name)` of every extension that is not built in to Edge.
-    pub user_extensions: Vec<String>,
+    /// JSON paths of `email` fields that hold an address, such as
+    /// `account_info[0].email`. The addresses themselves are never kept.
+    pub account_email_paths: Vec<String>,
+    /// Every non-component entry under `extensions.settings`.
+    pub extensions: Vec<ExtensionEntry>,
     /// The `credentials_enable_service` pref, if present.
     pub password_saving: Option<bool>,
+}
+
+/// One entry under `extensions.settings`. An entry is not proof that the
+/// extension runs: Edge keeps entries for built-in and disabled ones too.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtensionEntry {
+    pub id: String,
+    pub name: Option<String>,
+    pub location: Option<u64>,
 }
 
 pub fn read_profile_facts(profile_dir: &Path) -> Result<ProfileFacts, String> {
@@ -238,7 +249,7 @@ pub fn read_profile_facts(profile_dir: &Path) -> Result<ProfileFacts, String> {
         let json: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{name}: {e}"))?;
         read_any = true;
 
-        facts.account_emails += count_emails(&json);
+        collect_email_paths(&json, String::new(), &mut facts.account_email_paths);
 
         if let Some(value) = json.get("credentials_enable_service").and_then(|v| v.as_bool()) {
             facts.password_saving = Some(value);
@@ -248,17 +259,19 @@ pub fn read_profile_facts(profile_dir: &Path) -> Result<ProfileFacts, String> {
         // 5 = component, 10 = external component (both built in to Edge).
         if let Some(settings) = json.pointer("/extensions/settings").and_then(|v| v.as_object()) {
             for (id, entry) in settings {
-                let location = entry.get("location").and_then(|v| v.as_u64()).unwrap_or(0);
-                if location == 5 || location == 10 {
+                let location = entry.get("location").and_then(|v| v.as_u64());
+                if matches!(location, Some(5) | Some(10)) {
                     continue;
                 }
-                let label = entry
-                    .pointer("/manifest/name")
-                    .and_then(|v| v.as_str())
-                    .map(|n| format!("{id} ({n})"))
-                    .unwrap_or_else(|| id.clone());
-                if !facts.user_extensions.contains(&label) {
-                    facts.user_extensions.push(label);
+                let name = entry.pointer("/manifest/name").and_then(|v| v.as_str()).map(str::to_string);
+                // The same id can appear in both files; keep the entry with
+                // the most information.
+                match facts.extensions.iter_mut().find(|e| e.id == *id) {
+                    Some(existing) => {
+                        existing.name = existing.name.take().or(name);
+                        existing.location = existing.location.or(location);
+                    }
+                    None => facts.extensions.push(ExtensionEntry { id: id.clone(), name, location }),
                 }
             }
         }
@@ -267,18 +280,24 @@ pub fn read_profile_facts(profile_dir: &Path) -> Result<ProfileFacts, String> {
     if read_any { Ok(facts) } else { Err("no Preferences file in the profile".into()) }
 }
 
-/// Counts string values under keys named `email` that look like an address.
-fn count_emails(value: &serde_json::Value) -> usize {
+/// Records the JSON path of every `email` field holding an address.
+fn collect_email_paths(value: &serde_json::Value, path: String, out: &mut Vec<String>) {
     match value {
-        serde_json::Value::Object(map) => map
-            .iter()
-            .map(|(key, v)| match v {
-                serde_json::Value::String(s) if key == "email" && s.contains('@') => 1,
-                other => count_emails(other),
-            })
-            .sum(),
-        serde_json::Value::Array(items) => items.iter().map(count_emails).sum(),
-        _ => 0,
+        serde_json::Value::Object(map) => {
+            for (key, v) in map {
+                let child = if path.is_empty() { key.clone() } else { format!("{path}.{key}") };
+                match v {
+                    serde_json::Value::String(s) if key == "email" && s.contains('@') => out.push(child),
+                    other => collect_email_paths(other, child, out),
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for (i, item) in items.iter().enumerate() {
+                collect_email_paths(item, format!("{path}[{i}]"), out);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -352,8 +371,9 @@ mod tests {
         let facts = read_profile_facts(&dir).unwrap();
         fs::remove_dir_all(&dir).unwrap();
 
-        assert_eq!(facts.account_emails, 1);
-        assert_eq!(facts.user_extensions, vec!["bbb (Translator)".to_string()]);
+        assert_eq!(facts.account_email_paths, vec!["account_info[0].email".to_string()]);
+        let ids: Vec<_> = facts.extensions.iter().map(|e| (e.id.as_str(), e.name.as_deref(), e.location)).collect();
+        assert_eq!(ids, vec![("bbb", Some("Translator"), Some(1))]);
         assert_eq!(facts.password_saving, Some(false));
     }
 

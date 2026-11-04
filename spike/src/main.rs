@@ -325,6 +325,7 @@ async fn spike(options: &Options, profile_dir: &Path, capture: &logcheck::Captur
         tokio::time::sleep(Duration::from_secs(options.observe)).await;
     }
     check_extra_tabs(&browser, &base, report);
+    check_running_extensions(&browser, report).await;
 
     // 6. Hand the window over, or close it.
     match options.mode {
@@ -386,27 +387,100 @@ fn report_profile(profile_dir: &Path, clean_shutdown: bool, report: &mut Report)
         }
     };
 
-    let mut row = |ok: bool, check: &str, detail: String| {
+    // A plain function rather than a closure, so `report` stays free for
+    // the info row in between (a closure would hold it borrowed).
+    fn row(report: &mut Report, clean_shutdown: bool, ok: bool, check: &str, detail: String) {
         if clean_shutdown {
             report.check(ok, check, detail);
         } else {
             report.add(Status::Info, check, format!("{detail} (read while Edge runs; may lag)"));
         }
-    };
+    }
+
+    // Where the address sits says what kind of sign-in it is. Only the
+    // JSON paths are printed, never the address.
     row(
-        facts.account_emails == 0,
+        report,
+        clean_shutdown,
+        facts.account_email_paths.is_empty(),
         "no account signed in",
-        format!("{} email field(s) found in the profile", facts.account_emails),
+        if facts.account_email_paths.is_empty() {
+            "no email fields in the profile".to_string()
+        } else {
+            format!("email field(s) at: {}", facts.account_email_paths.join(", "))
+        },
     );
+
+    // Info only: the profile cannot tell an installed extension from
+    // Edge's own entries (a command-line extension had no manifest in
+    // its entry either). `no extensions running` is the real check.
+    if facts.extensions.is_empty() {
+        report.add(Status::Info, "extension entries", "none in the profile");
+    } else {
+        let mut by_location = std::collections::BTreeMap::<String, usize>::new();
+        for e in &facts.extensions {
+            let loc = e.location.map(|l| l.to_string()).unwrap_or_else(|| "none".into());
+            *by_location.entry(loc).or_default() += 1;
+        }
+        let groups: Vec<_> = by_location.iter().map(|(loc, n)| format!("location {loc} x{n}")).collect();
+        let named: Vec<_> = facts.extensions.iter().filter_map(|e| e.name.as_deref()).collect();
+        report.add(
+            Status::Info,
+            "extension entries",
+            format!(
+                "{} in the profile ({}); named: {}",
+                facts.extensions.len(),
+                groups.join(", "),
+                if named.is_empty() { "none".to_string() } else { named.join(", ") }
+            ),
+        );
+    }
+
     row(
-        facts.user_extensions.is_empty(),
-        "no user extensions",
-        if facts.user_extensions.is_empty() { "none".to_string() } else { facts.user_extensions.join(", ") },
-    );
-    row(
+        report,
+        clean_shutdown,
         facts.password_saving == Some(false),
         "password saving off",
         format!("credentials_enable_service = {:?}", facts.password_saving),
+    );
+}
+
+/// The ground truth for extensions: ask the browser which extension
+/// pages and workers are running right now (CDP `Target.getTargets`).
+/// Disabled or never-loaded extensions have no targets.
+async fn check_running_extensions(browser: &Browser, report: &mut Report) {
+    let targets = match browser.new_browser_cdp_session().await {
+        // An explicit empty filter means "every target", rather than
+        // whatever discovery filter Playwright set up.
+        Ok(session) => session.send("Target.getTargets", Some(serde_json::json!({ "filter": [{}] }))).await,
+        Err(e) => Err(e),
+    };
+    let targets = match targets {
+        Ok(value) => value,
+        Err(e) => {
+            report.add(Status::Info, "no extensions running", format!("could not list targets: {e}"));
+            return;
+        }
+    };
+
+    let mut running = Vec::new();
+    // playwright-rs returns the CDP reply wrapped as {"result": {...}}.
+    let infos = targets.pointer("/result/targetInfos").or_else(|| targets.get("targetInfos"));
+    for info in infos.and_then(|v| v.as_array()).into_iter().flatten() {
+        let url = info.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        let kind = info.get("type").and_then(|v| v.as_str()).unwrap_or("?");
+        if let Some(rest) = url.strip_prefix("chrome-extension://") {
+            let id = rest.split('/').next().unwrap_or("");
+            let label = format!("{id} ({kind})");
+            if !running.contains(&label) {
+                running.push(label);
+            }
+        }
+    }
+    report.check(
+        running.is_empty(),
+        "no extensions running",
+        if running.is_empty() { "no extension targets".to_string() } else { running.join(", ") },
     );
 }
 

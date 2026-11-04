@@ -72,7 +72,7 @@ msedge.exe --user-data-dir=<profile folder>
            --disable-extensions
            --disable-component-extensions-with-background-pages
            --disable-default-apps
-           --disable-features=msForceBrowserSignIn
+           --disable-features=msForceBrowserSignIn,SwitchIntranetSitesToWorkProfile
            --edge-skip-compat-layer-relaunch  (Edge must not relaunch itself as a new process)
            [--ignore-certificate-errors]      (only for a self-signed site)
            about:blank
@@ -99,7 +99,9 @@ Those extensions run in the window that receives the password, and the admin con
 - `ExtensionInstallForcelist`
 - `PasswordManagerEnabled`
 
-So the app must check its result, not assume it. After launch, look for tabs it didn't open. After a managed close, read the profile's preferences for a signed-in account, user extensions and password saving. Warn the admin when isolation failed.
+So the app must check its result, not assume it. After launch, look for tabs it didn't open, and ask the browser which extensions are running (CDP `Target.getTargets`, with an explicit `filter: [{}]`). After a managed close, read the profile's preferences for a signed-in account and password saving. Warn the admin when isolation failed. The profile's extension list can't tell installed extensions from Edge's own entries, so it's diagnostic only.
+
+`SwitchIntranetSitesToWorkProfile` is disabled too. Edge can move intranet URLs, such as a 10.x console, into the admin's "Work" profile window, away from the automated one.
 
 Why:
 - Recent Chrome/Edge versions refuse remote debugging on the default profile, so every launch uses NetLaunch's own profile folder.
@@ -110,7 +112,9 @@ Find Edge through the registry (`HKLM`, then `HKCU`, `SOFTWARE\Microsoft\Windows
 
 **Spike status:**
 - **Steps 1–5 pass on Windows with Edge 155** (Nov 4, 2026), in both released and managed modes.
-- **That run found the isolation problem above.** The spike now adds the isolation switches and checks for it. A second Windows run of the isolated spike closes M1.
+- **That run found the isolation problem above.** The second run, with isolation, removed the synced favorites, synced extensions, extra tabs and password saving.
+- **Edge still signs the profile in to the Windows account** (implicit sign-in). No command-line switch stops it; only the `ImplicitSignInEnabled` policy does. With sync and extensions off, what remains is single sign-on to Microsoft sites in that window. See open decision 9.
+- A third Windows run checks which extensions actually run (`Target.getTargets`) and where the sign-in is recorded. It closes M1.
 
 ## Architecture
 
@@ -311,6 +315,7 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
 | 6 | Session cookies | Fresh profile each launch · persistent profile per site | Fresh by default, persistent as a per-site option | M5 |
 | 7 | Frontend | Vue 3 + Vite · plain HTML/JS | Vue 3 + Vite | M4 |
 | 8 | Encrypt usernames too | Yes · no | No (keeps search and display simple) | M3 |
+| 9 | Edge's implicit sign-in in the login window | Accept it (sync and extensions are off) · set `ImplicitSignInEnabled` = 0 for the user (also affects new profiles in the admin's own Edge) · detect it and warn | Pending the third Windows run, which shows where the sign-in is recorded | M5 |
 
 ## Risks
 
