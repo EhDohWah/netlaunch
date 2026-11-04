@@ -7,6 +7,7 @@ A throwaway command-line program that answers the M1 questions before any app co
 3. Does the log stay free of the password at the log level we plan to use?
 4. **Released mode:** after disconnecting, does Edge stay open and usable, even after the program exits?
 5. **Managed mode:** when we close it, is every Edge process for that profile gone?
+6. **Isolation:** is the new profile free of your Windows account, sync, extensions and password saving?
 
 The program starts its own small web server on `127.0.0.1` with the two test forms (`pages/`), so nothing on the network is touched. The test account is fake.
 
@@ -21,34 +22,36 @@ cargo build -p netlaunch-spike
 
 The first build downloads the Playwright driver (about 130 MB). If it fails, see "If the driver download fails" below.
 
-### Run 1: released mode
+Each run spends 15 seconds watching the window after login (`--observe`), so sign-in, sync and extension tabs have time to show up.
 
-```powershell
-.\target\debug\spike.exe run
-```
-
-An Edge window opens, logs in to both forms, then the program exits.
-
-- **Check:** the Edge window is still open and you can click around in it.
-- Then close it yourself.
-
-### Run 2: managed mode
+### Run 1: managed mode
 
 ```powershell
 .\target\debug\spike.exe run --mode managed
 ```
 
-An Edge window opens and logs in. Press Enter in the terminal and the window should close.
+An Edge window opens and logs in. Wait for "press Enter", then press Enter: Edge quits cleanly and the spike reads the profile it left behind.
 
-- **Check:** in Task Manager (Details tab), no `msedge.exe` with `netlaunch-spike` in its command line remains. Add the "Command line" column if needed.
+- **Check:** the window has no favorites bar, no profile picture in the toolbar, and only the spike's tab.
 
-### Run 3: the other release method
+### Run 2: released mode
 
 ```powershell
-.\target\debug\spike.exe run --release-via shutdown
+.\target\debug\spike.exe run
 ```
 
-This releases by only stopping the Playwright driver. Check the window stays open, as in run 1.
+An Edge window opens, logs in, then the program exits.
+
+- **Check:** the Edge window is still open and you can click around in it.
+- Then close it yourself.
+
+### Run 3: without isolation (for comparison)
+
+```powershell
+.\target\debug\spike.exe run --mode managed --no-isolation
+```
+
+This is how the first Windows run launched Edge. On your PC, expect it to FAIL some of the isolation checks: an account signed in, user extensions, extra tabs, password saving. That shows the checks catch the problem.
 
 ### What to send back
 
@@ -58,7 +61,8 @@ Each run ends with a block that starts with `===== M1 spike summary`. Copy those
 
 ```
 spike run [--mode released|managed] [--release-via close|shutdown]
-          [--close-after SECONDS] [--log-level info|debug|trace]
+          [--close-after SECONDS] [--observe SECONDS] [--no-isolation]
+          [--log-level info|debug|trace]
           [--browser PATH] [--browser-arg ARG]... [--headless]
           [--driver-path DIR]
 ```
@@ -80,18 +84,24 @@ The `1.64.0` and `24.21.0` versions match playwright-rs 0.20.1. Use the same ver
 
 ## Results so far
 
-Run in a Linux container against Chromium 153, headless, with a hand-assembled driver:
+### Windows 11, Edge 155.0.4283.62 (Nov 4, 2026, first version of the spike)
+
+Every check passed in released and managed mode: debug port, attach, both form logins, password absent from the `info` log, Edge surviving a release, and managed close leaving nothing behind.
+
+The screenshots showed what the checks didn't cover. The "fresh" profile wasn't isolated:
+- It was signed in to the Windows account, with the account's favorites bar and profile picture.
+- Synced extensions (a translator, Wappalyzer) were installed and opened their own tabs.
+- Edge showed its password key icon after the login.
+
+The spike now launches Edge with isolation switches and seeded preferences (`edge::isolation_args`, `edge::seed_preferences`), and checks for all of this. A Windows run of the new version is pending.
+
+### Linux container, Chromium 153, headless, hand-assembled driver
 
 | Check | Result |
 |---|---|
-| Debug port read from `DevToolsActivePort` | PASS |
-| `connect_over_cdp` to a browser we launched | PASS (1 default context, existing tab reused) |
-| Plain form login | PASS |
-| Controlled form login | PASS |
+| Debug port, attach, both form logins | PASS |
 | Password absent from log at `info` / `debug` | PASS |
 | Password absent from log at `trace` | **FAIL, as expected**: the password appears in the log |
-| Released via `Browser::close` | PASS: browser alive, logged-in tab still open after the spike exited |
-| Released via driver shutdown only | PASS |
-| Managed close: endpoint gone, profile folder deletable | PASS (5 runs in a row) |
-
-Still to confirm on Windows with the installed Edge: all of the above, plus a visible (not headless) window staying usable after the spike exits.
+| Released via `Browser::close` or driver shutdown | PASS: browser alive, logged-in tab still open after the spike exited |
+| Managed: clean quit via CDP `Browser.close`, profile deletable | PASS |
+| Isolation checks (extra tabs, account, extensions, password saving) | PASS with isolation. Without it only "password saving off" fails, because the container has no account to sync. |

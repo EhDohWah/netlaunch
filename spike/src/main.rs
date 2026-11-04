@@ -42,6 +42,11 @@ RUN OPTIONS:
                                 shutdown: only stop the Playwright driver
     --close-after SECONDS     Managed mode: close after N seconds instead of
                               waiting for Enter
+    --observe SECONDS         Wait this long after login before checking for
+                              extra tabs, so sign-in, sync and extension
+                              installs have time to show up (default: 15)
+    --no-isolation            Launch Edge without the isolation switches and
+                              preferences, to compare with the default
     --log-level LEVEL         info (default), debug or trace. Set here, never
                               from RUST_LOG
     --browser PATH            Browser executable (default: installed Edge)
@@ -67,6 +72,8 @@ struct Options {
     mode: Mode,
     release_via: ReleaseVia,
     close_after: Option<u64>,
+    observe: u64,
+    isolate: bool,
     log_level: String,
     browser: Option<PathBuf>,
     browser_args: Vec<String>,
@@ -79,6 +86,8 @@ fn parse_run_options(mut args: impl Iterator<Item = String>) -> Result<Options, 
         mode: Mode::Released,
         release_via: ReleaseVia::Close,
         close_after: None,
+        observe: 15,
+        isolate: true,
         log_level: "info".to_string(),
         browser: None,
         browser_args: Vec::new(),
@@ -113,6 +122,11 @@ fn parse_run_options(mut args: impl Iterator<Item = String>) -> Result<Options, 
                 let raw = value("--close-after")?;
                 options.close_after = Some(raw.parse().map_err(|_| format!("bad seconds '{raw}'"))?);
             }
+            "--observe" => {
+                let raw = value("--observe")?;
+                options.observe = raw.parse().map_err(|_| format!("bad seconds '{raw}'"))?;
+            }
+            "--no-isolation" => options.isolate = false,
             "--log-level" => {
                 let level = value("--log-level")?;
                 if !matches!(level.as_str(), "info" | "debug" | "trace") {
@@ -262,8 +276,24 @@ async fn spike(options: &Options, profile_dir: &Path, capture: &logcheck::Captur
         std::env::var("PLAYWRIGHT_DRIVER_PATH").unwrap_or_else(|_| "(none: compiled-in driver path)".into()),
     );
 
+    let policies = edge::edge_policies();
+    if policies.is_empty() {
+        report.add(Status::Info, "edge policies", "none of the checked policies are set");
+    }
+    for (name, value) in policies {
+        report.add(Status::Info, "edge policy", format!("{name} = {value}"));
+    }
+
     // 2. Launch it ourselves and read the port it picked.
-    let mut child = edge::launch(&browser_exe, profile_dir, options.headless, &options.browser_args)
+    if options.isolate {
+        edge::seed_preferences(profile_dir).map_err(|e| format!("could not write starting preferences: {e}"))?;
+    }
+    report.add(
+        Status::Info,
+        "isolation",
+        if options.isolate { "on (switches + preferences)" } else { "OFF (--no-isolation)" },
+    );
+    let mut child = edge::launch(&browser_exe, profile_dir, options.isolate, options.headless, &options.browser_args)
         .map_err(|e| format!("could not start {}: {e}", browser_exe.display()))?;
     report.add(Status::Info, "profile folder", profile_dir.display().to_string());
 
@@ -279,8 +309,8 @@ async fn spike(options: &Options, profile_dir: &Path, capture: &logcheck::Captur
 
     // 3..5 run inside a helper so any error still reaches the cleanup below.
     let attach = attach_and_login(port, capture, options, report).await;
-    let (playwright, browser) = match attach {
-        Ok(pair) => pair,
+    let (playwright, browser, base) = match attach {
+        Ok(attached) => attached,
         Err(message) => {
             let _ = child.kill();
             let _ = child.wait();
@@ -288,12 +318,96 @@ async fn spike(options: &Options, profile_dir: &Path, capture: &logcheck::Captur
         }
     };
 
+    // Give sign-in, sync and extension installs time to happen, then look
+    // for any tab the spike did not open.
+    if options.observe > 0 {
+        println!("\nWatching the window for {}s (sign-in, sync, extension tabs)...", options.observe);
+        tokio::time::sleep(Duration::from_secs(options.observe)).await;
+    }
+    check_extra_tabs(&browser, &base, report);
+
     // 6. Hand the window over, or close it.
     match options.mode {
-        Mode::Released => release(playwright, browser, port, profile_dir, options.release_via, report).await,
-        Mode::Managed => close_managed(playwright, child, port, profile_dir, options.close_after, report).await,
+        Mode::Released => {
+            release(playwright, browser, port, profile_dir, options.release_via, report).await;
+            // Edge is still running, so its preference files may lag behind.
+            report_profile(profile_dir, false, report);
+        }
+        Mode::Managed => {
+            close_managed(playwright, browser, child, port, options.close_after, report).await;
+            report_profile(profile_dir, true, report);
+            // If any Edge process were still running on this profile,
+            // Windows would keep its files locked and the delete would fail.
+            match edge::remove_profile(profile_dir) {
+                Ok(()) => report.check(true, "managed: profile removed", "no process holds the profile folder"),
+                Err(e) => {
+                    report.check(false, "managed: profile removed", format!("{e} (an Edge process may still be running)"))
+                }
+            }
+        }
     }
     Ok(())
+}
+
+/// Every tab should be the spike's own test page or `about:blank`. Anything
+/// else (an extension's welcome page, a sign-in prompt) means the window is
+/// not isolated. Only scheme and host are printed, never full URLs.
+fn check_extra_tabs(browser: &Browser, base: &str, report: &mut Report) {
+    let mut extra = Vec::new();
+    for context in browser.contexts() {
+        for page in context.pages() {
+            let url = page.url();
+            if url == "about:blank" || url.starts_with(base) {
+                continue;
+            }
+            let short = match url.split_once("://") {
+                Some((scheme, rest)) => format!("{scheme}://{}", rest.split('/').next().unwrap_or("")),
+                None => url,
+            };
+            extra.push(short);
+        }
+    }
+    report.check(
+        extra.is_empty(),
+        "no extra tabs",
+        if extra.is_empty() { "only the spike's tab is open".to_string() } else { extra.join(", ") },
+    );
+}
+
+/// Reports what the profile folder says about sign-in, extensions and
+/// password saving. They are checks only after a clean shutdown; while
+/// Edge runs the files may be out of date, so they are info.
+fn report_profile(profile_dir: &Path, clean_shutdown: bool, report: &mut Report) {
+    let facts = match edge::read_profile_facts(profile_dir) {
+        Ok(facts) => facts,
+        Err(e) => {
+            report.add(Status::Info, "profile facts", format!("not readable: {e}"));
+            return;
+        }
+    };
+
+    let mut row = |ok: bool, check: &str, detail: String| {
+        if clean_shutdown {
+            report.check(ok, check, detail);
+        } else {
+            report.add(Status::Info, check, format!("{detail} (read while Edge runs; may lag)"));
+        }
+    };
+    row(
+        facts.account_emails == 0,
+        "no account signed in",
+        format!("{} email field(s) found in the profile", facts.account_emails),
+    );
+    row(
+        facts.user_extensions.is_empty(),
+        "no user extensions",
+        if facts.user_extensions.is_empty() { "none".to_string() } else { facts.user_extensions.join(", ") },
+    );
+    row(
+        facts.password_saving == Some(false),
+        "password saving off",
+        format!("credentials_enable_service = {:?}", facts.password_saving),
+    );
 }
 
 async fn attach_and_login(
@@ -301,7 +415,7 @@ async fn attach_and_login(
     capture: &logcheck::Capture,
     options: &Options,
     report: &mut Report,
-) -> Result<(Playwright, Browser), String> {
+) -> Result<(Playwright, Browser, String), String> {
     let playwright = Playwright::launch()
         .await
         .map_err(|e| format!("could not start the Playwright driver: {e}"))?;
@@ -324,13 +438,17 @@ async fn attach_and_login(
         .into_iter()
         .next()
         .ok_or("no default context after connect_over_cdp")?;
-    let page = match context.pages().into_iter().next() {
+    // Pick the about:blank tab Edge was started with, not just the first
+    // tab: an extension may already have opened a welcome page.
+    let pages = context.pages();
+    report.add(Status::Info, "tabs at attach", pages.len().to_string());
+    let page = match pages.into_iter().find(|p| p.url() == "about:blank") {
         Some(page) => {
             report.add(Status::Info, "tab", "reused the existing about:blank tab");
             page
         }
         None => {
-            report.add(Status::Info, "tab", "no existing tab; opened one in the default context");
+            report.add(Status::Info, "tab", "no about:blank tab; opened one in the default context");
             context.new_page().await.map_err(|e| format!("new_page failed: {e}"))?
         }
     };
@@ -359,7 +477,7 @@ async fn attach_and_login(
         },
     );
 
-    Ok((playwright, browser))
+    Ok((playwright, browser, base))
 }
 
 /// Fills and submits one form, then returns the text of `#result`.
@@ -410,9 +528,9 @@ async fn release(
 
 async fn close_managed(
     playwright: Playwright,
+    browser: Browser,
     mut child: Child,
     port: u16,
-    profile_dir: &Path,
     close_after: Option<u64>,
     report: &mut Report,
 ) {
@@ -431,18 +549,27 @@ async fn close_managed(
         }
     }
 
-    // Managed close = end the process we started. Deterministic, and does
-    // not depend on what Browser::close means for an attached browser.
-    let _ = child.kill();
-    let _ = child.wait();
+    // Ask Edge to quit cleanly first (the CDP `Browser.close` command, not
+    // playwright-rs's Browser::close, which only disconnects an attached
+    // browser). A clean quit saves the profile, which persistent profiles
+    // need. Kill the process only if it does not exit in time.
+    let graceful = match browser.new_browser_cdp_session().await {
+        // The connection drops as Edge quits, so an error here is normal.
+        Ok(session) => {
+            let _ = session.send("Browser.close", None).await;
+            tokio::task::block_in_place(|| edge::wait_for_exit(&mut child, Duration::from_secs(10)))
+        }
+        Err(_) => false,
+    };
+    if graceful {
+        report.check(true, "managed: clean quit", "Edge exited after CDP Browser.close");
+    } else {
+        report.check(false, "managed: clean quit", "Edge did not exit within 10s; killed it");
+        let _ = child.kill();
+        let _ = child.wait();
+    }
     let _ = playwright.shutdown().await;
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     report.check(!edge::debug_endpoint_alive(port), "managed: Edge closed", "DevTools endpoint no longer answering");
-    // If any Edge process were still running on this profile, Windows would
-    // keep its files locked and the delete would fail.
-    match edge::remove_profile(profile_dir) {
-        Ok(()) => report.check(true, "managed: profile removed", "no process holds the profile folder"),
-        Err(e) => report.check(false, "managed: profile removed", format!("{e} (an Edge process may still be running)")),
-    }
 }

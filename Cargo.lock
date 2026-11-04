@@ -633,6 +633,7 @@ name = "netlaunch-spike"
 version = "0.1.0"
 dependencies = [
  "playwright-rs",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",

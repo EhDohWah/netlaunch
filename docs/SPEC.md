@@ -68,15 +68,38 @@ NetLaunch never lets playwright-rs launch the browser. It starts Edge itself, as
 msedge.exe --user-data-dir=<profile folder>
            --remote-debugging-port=0          (Edge picks a free port)
            --no-first-run --no-default-browser-check
+           --disable-sync                     (isolation, see below)
+           --disable-extensions
+           --disable-component-extensions-with-background-pages
+           --disable-default-apps
+           --disable-features=msForceBrowserSignIn
+           --edge-skip-compat-layer-relaunch  (Edge must not relaunch itself as a new process)
            [--ignore-certificate-errors]      (only for a self-signed site)
            about:blank
 ```
 
+Before launch, write `<profile folder>\Default\Preferences` with `credentials_enable_service: false`, `profile.password_manager_enabled: false` and autofill off, so Edge never offers to save the password it sees typed.
+
 1. Read the port from `<profile folder>\DevToolsActivePort` (first line).
 2. Attach with `chromium().connect_over_cdp("http://127.0.0.1:<port>")`.
-3. Use the browser's **default context and its existing tab**, never `new_context()`.
+3. Use the browser's **default context and its `about:blank` tab**, never `new_context()`. Pick the tab by its URL, not by position, because something else may have opened a tab first.
 4. **Released:** call `Browser::close()` (for an attached browser this only disconnects), then stop the driver. Edge keeps running.
-5. **Managed close:** kill the Edge process the app started, then delete a fresh profile folder.
+5. **Managed close:** send the CDP `Browser.close` command so Edge quits cleanly and saves the profile. If it hasn't exited after 10 s, kill the process. Then delete a fresh profile folder.
+
+**Isolation.** The first Windows run showed that a brand-new profile isn't automatically clean. Without the isolation switches, Edge on a work PC did three things:
+- signed the new profile in to the Windows account
+- synced the account's favorites
+- installed the synced extensions, which opened their own tabs
+
+Those extensions run in the window that receives the password, and the admin console URLs would sync back to the account. Playwright adds most of these switches when it launches a browser itself; NetLaunch launches Edge itself, so it adds them. The list follows Playwright 1.64's `chromiumSwitches.ts`, keeping only the switches about isolation.
+
+**Edge policies beat command-line switches.** Machine policies such as these override the switches:
+- `BrowserSignin`
+- `ForceSync`
+- `ExtensionInstallForcelist`
+- `PasswordManagerEnabled`
+
+So the app must check its result, not assume it. After launch, look for tabs it didn't open. After a managed close, read the profile's preferences for a signed-in account, user extensions and password saving. Warn the admin when isolation failed.
 
 Why:
 - Recent Chrome/Edge versions refuse remote debugging on the default profile, so every launch uses NetLaunch's own profile folder.
@@ -85,7 +108,9 @@ Why:
 
 Find Edge through the registry (`HKLM`, then `HKCU`, `SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe`). If that fails, check `%ProgramFiles(x86)%`, `%ProgramFiles%` and `%LOCALAPPDATA%` under `Microsoft\Edge\Application\msedge.exe`.
 
-**Spike status:** steps 1–5 pass against Chromium 153 on Linux, including the logged-in tab surviving a release. The Windows/Edge run is the M1 check.
+**Spike status:**
+- **Steps 1–5 pass on Windows with Edge 155** (Nov 4, 2026), in both released and managed modes.
+- **That run found the isolation problem above.** The spike now adds the isolation switches and checks for it. A second Windows run of the isolated spike closes M1.
 
 ## Architecture
 
@@ -258,7 +283,9 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
      - `cargo build` downloads the Playwright driver (or the manual fallback works).
      - `edge://policy` doesn't set `RemoteDebuggingAllowed` to false.
 2. **M1 — Browser spike** (`spike/`, no Tauri). Launches Edge, attaches, logs in to a plain and a controlled form, and tests released and managed modes.
-   - Done when `spike run` passes in both modes on Windows, and the released window stays usable after the spike exits.
+   - Done when:
+     - `spike run` passes in both modes on Windows, including the isolation checks.
+     - The released window stays usable after the spike exits.
 3. **M2 — Mock login site.** The axum server with the eight test pages.
    - Done when each page works by hand in Edge.
 4. **M3 — Vault.** SQLite schema, DPAPI-wrapped key, encrypt/decrypt, unit tests.
@@ -293,6 +320,7 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
 | playwright-rs is a community crate, pre-1.0 | Breaking API changes on upgrade | Pin the exact version; keep driver code behind one trait |
 | Edge auto-updates; the bundled Playwright server is pinned | A newer Edge may stop working with the old driver | Upgrade the crate every few months; re-run the mock suite after Edge updates |
 | Company policy blocks remote debugging | The app can't log in at all | Checked in M0; manual login still works |
+| Edge signs the new profile in to the Windows account, syncs it, installs synced extensions | Extensions read the page while the password is typed; console URLs sync to the account; Edge may save the password | Isolation switches + seeded preferences; the app checks for extra tabs and profile state, and warns when a machine policy defeats isolation |
 | HTTPS-inspecting proxy breaks the driver download at build time | `cargo build` can't fetch the driver | Manual driver folder + `PLAYWRIGHT_DRIVER_PATH` (documented in `spike/README.md`) |
 | Driver's Node process handles passwords | One more local process sees them | Child process with no network use; never `trace`-log playwright-rs |
 | A site's login page changes | Recipe stops working | Timeout falls back to handing over the window; recipe is a small JSON fix |
