@@ -60,6 +60,9 @@ pub struct Session {
     /// In a Mutex so `&self` methods can check whether Edge is still
     /// running.
     child: Mutex<Child>,
+    /// The DevTools port Edge picked. Also tells whether the browser is
+    /// still there if the process NetLaunch started has exited.
+    port: u16,
     profile_dir: PathBuf,
     /// Delete the profile folder when the window is closed.
     fresh: bool,
@@ -87,11 +90,12 @@ impl Session {
             .map_err(|e| format!("Couldn't start {}: {e}", options.browser.display()))?;
 
         match Self::attach(&profile_dir, &mut child).await {
-            Ok((playwright, browser, page)) => Ok(Session {
+            Ok((playwright, browser, page, port)) => Ok(Session {
                 playwright,
                 browser,
                 page,
                 child: Mutex::new(child),
+                port,
                 profile_dir,
                 fresh,
             }),
@@ -107,7 +111,10 @@ impl Session {
         }
     }
 
-    async fn attach(profile_dir: &std::path::Path, child: &mut Child) -> Result<(Playwright, Browser, Page), String> {
+    async fn attach(
+        profile_dir: &std::path::Path,
+        child: &mut Child,
+    ) -> Result<(Playwright, Browser, Page, u16), String> {
         let port = edge::wait_for_debug_port(profile_dir, child, PORT_TIMEOUT).await?;
 
         let playwright = Playwright::launch().await.map_err(|e| {
@@ -144,7 +151,7 @@ impl Session {
             },
         };
         page.set_default_timeout(ACTION_TIMEOUT_MS).await;
-        Ok((playwright, browser, page))
+        Ok((playwright, browser, page, port))
     }
 
     /// The profile folder this window uses.
@@ -209,11 +216,17 @@ impl Session {
     }
 
     /// True while the Edge process NetLaunch started is running.
+    ///
+    /// Usually that's the process NetLaunch started. If that one has
+    /// exited, Edge may still be there in another process (it can hand over
+    /// to a new one, after an update for example), so the DevTools port
+    /// decides.
     pub fn is_running(&self) -> bool {
-        match self.child.lock() {
+        let child_running = match self.child.lock() {
             Ok(mut child) => matches!(child.try_wait(), Ok(None)),
             Err(_) => false,
-        }
+        };
+        child_running || edge::debug_endpoint_alive(self.port)
     }
 
     /// Checks the window really is isolated. Edge policies override the
@@ -287,16 +300,28 @@ impl Session {
     /// after 10 s, then deletes a fresh profile folder. Returns whether the
     /// quit was clean.
     pub async fn close(self) -> bool {
-        let Session { playwright, browser, child, profile_dir, fresh, .. } = self;
+        let Session { playwright, browser, child, port, profile_dir, fresh, .. } = self;
         let mut child = child.into_inner().unwrap_or_else(|poisoned| poisoned.into_inner());
 
         if let Ok(session) = browser.new_browser_cdp_session().await {
             // The connection drops as Edge quits, so an error here is normal.
             let _ = session.send("Browser.close", None).await;
         }
+        // Clean when the process we started has exited and the DevTools
+        // port is gone (which also covers Edge having moved to another
+        // process).
         let (mut child, clean) = tokio::task::spawn_blocking(move || {
-            let clean = edge::wait_for_exit(&mut child, CLOSE_GRACE);
-            (child, clean)
+            let deadline = std::time::Instant::now() + CLOSE_GRACE;
+            loop {
+                let exited = matches!(child.try_wait(), Ok(Some(_)));
+                if exited && !edge::debug_endpoint_alive(port) {
+                    return (child, true);
+                }
+                if std::time::Instant::now() >= deadline {
+                    return (child, false);
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
         })
         .await
         .expect("wait task");

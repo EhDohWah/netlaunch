@@ -125,14 +125,21 @@ pub async fn run<D: BrowserDriver>(
     tracing::info!(recipe = %recipe.id, outcome = ?outcome.log_outcome(), "login finished");
 
     // Hand the window over, whatever happened, unless it's gone.
-    let window_gone = matches!(&outcome, Outcome::Error(m) if m == WINDOW_CLOSED);
+    let window_gone = matches!(&outcome, Outcome::Error(m) if m.starts_with(WINDOW_CLOSED));
     if !window_gone {
         let _ = driver.bring_to_front().await;
     }
     outcome
 }
 
-const WINDOW_CLOSED: &str = "The browser window was closed before the login finished.";
+const WINDOW_CLOSED: &str = "The browser window was closed before the login finished";
+
+/// The closed-window message, with what noticed it (the tab closed, Edge
+/// exited, or the library's words) in brackets, for diagnosing.
+fn window_closed(detail: &str) -> Outcome {
+    tracing::warn!(%detail, "the window closed during the login");
+    Outcome::Error(format!("{WINDOW_CLOSED} ({detail})."))
+}
 
 async fn run_steps_and_wait<D: BrowserDriver>(
     driver: &D,
@@ -276,8 +283,8 @@ async fn wait_for_result<D: BrowserDriver>(
     loop {
         // The window being closed is the only error that ends the wait.
         // Others (the page is halfway through loading) just mean "not yet".
-        if let Err(DriverError::Closed(_)) = driver.current_url().await {
-            return Outcome::Error(WINDOW_CLOSED.into());
+        if let Err(DriverError::Closed(detail)) = driver.current_url().await {
+            return window_closed(&detail);
         }
         // Order matters: a dashboard can have an alert banner, and a 2FA
         // page can mention an error, so success wins, then 2FA.
@@ -362,7 +369,7 @@ fn describe_origin(url: &str) -> String {
 /// browser reports network failures as `net::ERR_...` codes.
 fn page_did_not_load(error: DriverError, origin: &str) -> Outcome {
     let text = match error {
-        DriverError::Closed(_) => return Outcome::Error(WINDOW_CLOSED.into()),
+        DriverError::Closed(detail) => return window_closed(&detail),
         DriverError::Timeout(_) => {
             return Outcome::Error(format!("{origin} took too long to load. Check the device is on and reachable."));
         }
@@ -412,7 +419,7 @@ fn step_failed(error: DriverError, doing: &str, typed: Option<&SecretString>) ->
         _ => message,
     };
     match error {
-        DriverError::Closed(_) => Outcome::Error(WINDOW_CLOSED.into()),
+        DriverError::Closed(detail) => window_closed(&detail),
         DriverError::Timeout(_) => Outcome::TimedOut { during: doing.to_string() },
         DriverError::Other(message) => Outcome::Error(format!("Failed while {doing}: {}", redact(message))),
     }

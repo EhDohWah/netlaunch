@@ -167,6 +167,31 @@ pub async fn wait_for_debug_port(profile_dir: &Path, child: &mut Child, timeout:
     }
 }
 
+/// True if Edge's DevTools endpoint on `port` still answers. This is how
+/// NetLaunch tells whether the browser is still there when the process it
+/// started has exited: Edge can hand over to a new process (after an
+/// update, for example) and keep the window open. Blocking, but quick: a
+/// closed port refuses at once.
+pub fn debug_endpoint_alive(port: u16) -> bool {
+    use std::io::{Read, Write};
+    use std::net::{SocketAddr, TcpStream};
+
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(500)) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    let request = format!("GET /json/version HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+    if stream.write_all(request.as_bytes()).is_err() {
+        return false;
+    }
+    let mut head = [0u8; 16];
+    match stream.read(&mut head) {
+        Ok(n) => String::from_utf8_lossy(&head[..n]).starts_with("HTTP/1.1 200"),
+        Err(_) => false,
+    }
+}
+
 /// Waits up to `timeout` for the browser process to exit on its own.
 /// Blocking: call it from `spawn_blocking`.
 pub fn wait_for_exit(child: &mut Child, timeout: Duration) -> bool {
