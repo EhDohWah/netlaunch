@@ -6,13 +6,13 @@
 //! `Debug` prints `[REDACTED]`, and are never serialized.
 
 use secrecy::SecretString;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{Result, VaultError};
 
 /// Whether each launch starts with an empty profile or reuses one per site
 /// (spec decision 6).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProfileMode {
     #[default]
@@ -21,7 +21,7 @@ pub enum ProfileMode {
 }
 
 /// What happens to the window after login (spec decision 3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum WindowMode {
     #[default]

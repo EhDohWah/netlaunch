@@ -6,6 +6,7 @@ members = [
     "crates/driver-pw",
     "crates/mock-site",
     "spike",
+    "app/src-tauri",
 ]
 
 [workspace.package]

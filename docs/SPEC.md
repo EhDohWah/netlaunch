@@ -328,6 +328,12 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
    - Status: built. 28 tests pass on Linux, and 31 on Windows (cross-compiled, run under Wine), including DPAPI and a DPAPI vault whose file holds neither the passwords nor the raw key. The GitHub Actions run on `windows-latest` is the real-Windows check.
 5. **M4 — Tauri shell.** Site list and add/edit screens wired to the vault.
    - Done when sites survive an app restart and no command returns a password.
+   - Status: built (`app/`).
+     - 7 command tests pass, including one that serializes every command's output and checks it holds no password.
+     - The UI flows pass in Chromium against a stand-in backend.
+     - The app cross-compiles for Windows.
+     - The restart check by hand on Windows (`app/README.md`) is pending.
+   - **Not in M4:** Open stays disabled until M5, and Test login and the Settings screen are left for later milestones.
 6. **M5 — Login engine.** Recipe runner, origin check, success detection, wired to the Open button.
    - Done when `/simple`, `/two-step`, `/spa`, `/slow`, `/wrong-password` and `/redirect-away` behave as the test table says.
 7. **M6 — 2FA handoff and window modes.** MFA detection, pause, managed and released modes.
@@ -345,7 +351,7 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
 | 4 | Master password on top of DPAPI | Yes, unlock on start · no, DPAPI only | **Decided: no** for the prototype; revisit before sharing the app | M3 |
 | 5 | Which browser | Installed Edge · installed Chrome · downloaded Chromium | **Decided: installed Edge** | M1 |
 | 6 | Session cookies | Fresh profile each launch · persistent profile per site | Fresh by default, persistent as a per-site option | M5 |
-| 7 | Frontend | Vue 3 + Vite · plain HTML/JS | Vue 3 + Vite | M4 |
+| 7 | Frontend | Vue 3 + Vite · plain HTML/JS | **Decided: Vue 3 + Vite** (JavaScript, no UI library) | M4 |
 | 8 | Encrypt usernames too | Yes · no | **Decided: no** (keeps search and display simple) | M3 |
 | 9 | Edge's implicit sign-in in the login window | Accept it (sync and extensions are off) · set `ImplicitSignInEnabled` = 0 for the user (also affects new profiles in the admin's own Edge) · detect it and warn | **Decided: accept and warn.** Confirmed by the third Windows run (`account_info[0].email`). The session panel warns when the window is signed in; no policy is changed | M5 |
 

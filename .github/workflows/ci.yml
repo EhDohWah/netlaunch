@@ -20,8 +20,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Windows runs the DPAPI tests (#[cfg(windows)]) for real.
-        os: [windows-latest, ubuntu-latest]
+        include:
+          # Windows runs everything, including the DPAPI tests and the
+          # Tauri app (which only runs on Windows).
+          - os: windows-latest
+            cargo_args: --workspace
+          # The app is Windows-only, and building it on Linux needs the
+          # WebKitGTK libraries, so Linux skips it.
+          - os: ubuntu-latest
+            cargo_args: --workspace --exclude netlaunch-app
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +37,22 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: Tests
-        run: cargo test --workspace
+        run: cargo test ${{ matrix.cargo_args }}
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy ${{ matrix.cargo_args }} --all-targets -- -D warnings
+
+  ui:
+    name: ui (vite build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - run: npm run build

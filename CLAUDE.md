@@ -10,15 +10,18 @@ NetLaunch is a Windows desktop app (Rust + Tauri) that stores admin console logi
 - Edge's implicit sign-in to the Windows account remains (`account_info[0].email`; open decision 9).
 - **M2 mock site: done** (`crates/mock-site`). Route tests pass, all scenarios pass in Chromium, and you checked them by hand in Edge. Decision 9: accept and warn.
 - **M3 vault: built** (`crates/vault`). Tests pass on Linux and on Windows under Wine; CI runs them on real Windows. Decisions 4 and 8: no master password, usernames not encrypted.
-- **Everything else** (engine, driver, Tauri app) is a placeholder crate.
+- **M3 vault: done.** CI passes, and all 31 tests pass on the owner's PC with real DPAPI.
+- **M4 Tauri shell: built** (`app/`). Site list and add/edit screens. Command tests and UI checks pass; the restart check by hand on Windows is pending. Decision 7: Vue 3 + Vite.
+- **Everything else** (engine, driver) is a placeholder crate.
 - **CI** (`.github/workflows/ci.yml`) runs tests and `clippy -D warnings` on Windows and Linux for every push.
 
 ## Commands
 
 ```bash
 cargo build                                  # first build downloads the Playwright driver (~130 MB)
-cargo test
+cargo test --workspace --exclude netlaunch-app        # on Linux; the Windows-only app needs WebKitGTK to build here
 cargo clippy --workspace --all-targets
+cd app && npm install && cargo tauri dev              # run the app (Windows); see app/README.md
 cargo run -p netlaunch-spike -- help         # M1 spike; see spike/README.md
 cargo run -p netlaunch-mock-site             # mock login site on https://localhost:8443; see crates/mock-site/README.md
 ```
@@ -45,11 +48,14 @@ crates/engine      recipes, origin check, BrowserDriver trait (M5); never import
 crates/driver-pw   BrowserDriver on playwright-rs (after M1)
 crates/mock-site   axum test site with the spec's eight scenarios + a lookalike site (M2)
 spike/             M1 throwaway CLI
+app/               Tauri 2 app: Vue 3 frontend in src/, Rust commands in src-tauri/ (M4)
 docs/SPEC.md       the spec
 ```
 
 - `vault` and `engine` must not depend on Tauri, so `cargo test` covers them without a GUI.
-- The Tauri app goes in `app/` when M4 starts.
+- **Tauri commands** (`app/src-tauri/src/main.rs`) are thin wrappers. Their logic lives in `sites.rs` as plain functions over a `Vault`, so it's tested without a window.
+- **Capabilities** (`app/src-tauri/capabilities/default.json`): `core:default` only, so no shell, file system or opener plugins. Keep it that way.
+- **Wine check of the app.** The windows-gnu build links `WebView2Loader.dll` dynamically. Copy it from `~/.cargo/registry/src/*/webview2-com-sys-*/x64/` next to the test `.exe` before running it under Wine. MSVC builds link it statically.
 
 ## Rules that must not be broken
 
