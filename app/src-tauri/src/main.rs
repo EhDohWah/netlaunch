@@ -95,6 +95,13 @@ fn delete_site(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     state.with_vault(|vault| vault.delete_site(id))
 }
 
+/// The "Trust this certificate" button: ticks the site's self-signed
+/// setting. The frontend then opens the site again.
+#[tauri::command]
+fn trust_certificate(state: State<'_, AppState>, id: i64) -> Result<Site, String> {
+    state.with_vault(|vault| sites::trust_certificate(vault, id))
+}
+
 #[derive(Serialize)]
 struct RecipeInfo {
     id: String,
@@ -139,7 +146,8 @@ fn main() {
             update_site,
             delete_site,
             list_recipes,
-            open_site
+            open_site,
+            trust_certificate
         ])
         .build(tauri::generate_context!())
         .expect("error while building NetLaunch");

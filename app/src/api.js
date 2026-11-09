@@ -34,6 +34,12 @@ export const listRecipes = () => invoke('list_recipes');
 export const openSite = (id) => invoke('open_site', { id });
 
 /**
+ * Ticks the site's "self-signed certificate" setting (after Edge rejected
+ * its certificate). Resolves to the saved site.
+ */
+export const trustCertificate = (id) => invoke('trust_certificate', { id });
+
+/**
  * Calls `handler({ site_id, stage })` as logins progress. `stage` is
  * launching | loading | filling | waiting. Resolves to an unlisten function.
  */

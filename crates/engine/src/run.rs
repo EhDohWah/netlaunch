@@ -61,6 +61,10 @@ pub enum Outcome {
     /// The window closed, the page didn't load, or the password couldn't
     /// be read from the vault.
     Error(String),
+    /// The page didn't load because its HTTPS certificate isn't trusted,
+    /// usually a device with a self-signed certificate. Nothing was typed.
+    /// The app offers to turn on the site's self-signed setting and retry.
+    UntrustedCertificate { origin: String },
 }
 
 impl Outcome {
@@ -69,7 +73,9 @@ impl Outcome {
         match self {
             Outcome::LoggedIn => LoginOutcome::Success,
             Outcome::MfaHandoff => LoginOutcome::MfaHandoff,
-            Outcome::Rejected { .. } | Outcome::Error(_) => LoginOutcome::Failed,
+            Outcome::Rejected { .. } | Outcome::Error(_) | Outcome::UntrustedCertificate { .. } => {
+                LoginOutcome::Failed
+            }
             Outcome::TimedOut { .. } => LoginOutcome::Timeout,
             Outcome::OriginMismatch { .. } => LoginOutcome::OriginMismatch,
         }
@@ -92,6 +98,11 @@ impl Outcome {
                  If {found} is the right address, change the site's login URL."
             ),
             Outcome::Error(message) => message.clone(),
+            Outcome::UntrustedCertificate { origin } => format!(
+                "Edge doesn't trust the certificate of {origin}, so it stopped before showing the login page. \
+                 Nothing was typed. Devices on your own network usually have a self-signed certificate: \
+                 if this is one, tick \"This site uses a self-signed certificate\" for the site."
+            ),
         }
     }
 }
@@ -154,7 +165,7 @@ async fn run_steps_and_wait<D: BrowserDriver>(
                 progress(Progress::Loading);
                 tracing::info!(step = number, "goto login URL");
                 if let Err(e) = driver.goto(target.login_url).await {
-                    return page_did_not_load(e);
+                    return page_did_not_load(e, &expected);
                 }
             }
             Step::Wait { selector, timeout_ms } => {
@@ -331,17 +342,50 @@ fn describe_origin(url: &str) -> String {
     }
 }
 
-fn page_did_not_load(error: DriverError) -> Outcome {
-    if let DriverError::Closed(_) = error {
-        return Outcome::Error(WINDOW_CLOSED.into());
-    }
-    let text = error.to_string();
-    let hint = if text.contains("ERR_CERT") {
-        " The site's certificate isn't trusted. If it uses a self-signed certificate, turn on \"Accept a self-signed certificate\" for this site."
-    } else {
-        ""
+/// Why the login page didn't load, in words the admin can act on. The
+/// browser reports network failures as `net::ERR_...` codes.
+fn page_did_not_load(error: DriverError, origin: &str) -> Outcome {
+    let text = match error {
+        DriverError::Closed(_) => return Outcome::Error(WINDOW_CLOSED.into()),
+        DriverError::Timeout(_) => {
+            return Outcome::Error(format!("{origin} took too long to load. Check the device is on and reachable."));
+        }
+        DriverError::Other(text) => text,
     };
-    Outcome::Error(format!("The login page didn't load: {text}.{hint}"))
+    let code = net_error_code(&text);
+    let message = match code.as_deref() {
+        Some(c) if c.starts_with("ERR_CERT_") => {
+            return Outcome::UntrustedCertificate { origin: origin.to_string() };
+        }
+        Some("ERR_CONNECTION_REFUSED") => {
+            format!("Nothing answered at {origin}. Check the device is on and the port in the URL is right.")
+        }
+        Some("ERR_NAME_NOT_RESOLVED") => {
+            format!("The address in {origin} couldn't be found. Check the URL for typos.")
+        }
+        Some("ERR_CONNECTION_TIMED_OUT" | "ERR_TIMED_OUT" | "ERR_ADDRESS_UNREACHABLE" | "ERR_NETWORK_ACCESS_DENIED") => {
+            format!("{origin} didn't answer. Check you're on the right network (or VPN) and the device is on.")
+        }
+        Some("ERR_SSL_PROTOCOL_ERROR" | "ERR_SSL_VERSION_OR_CIPHER_MISMATCH") => format!(
+            "Edge couldn't make a secure connection to {origin}. If the device only offers http, change the URL \
+             to http://; old devices may also use a TLS version Edge no longer accepts."
+        ),
+        Some("ERR_CONNECTION_RESET" | "ERR_EMPTY_RESPONSE") => format!(
+            "{origin} dropped the connection. If the URL starts with https://, check the device really serves \
+             https on that port."
+        ),
+        Some(other) => format!("The login page didn't load ({other})."),
+        None => format!("The login page didn't load: {text}"),
+    };
+    Outcome::Error(message)
+}
+
+/// `ERR_CERT_AUTHORITY_INVALID` from a message containing
+/// `net::ERR_CERT_AUTHORITY_INVALID`.
+fn net_error_code(text: &str) -> Option<String> {
+    let start = text.find("net::ERR_")? + "net::".len();
+    let code: String = text[start..].chars().take_while(|c| c.is_ascii_uppercase() || *c == '_').collect();
+    Some(code)
 }
 
 /// Turns a failed step into an outcome. `typed` is the text a fill step

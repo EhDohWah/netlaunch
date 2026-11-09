@@ -258,10 +258,8 @@ async fn untrusted_certificate_fails_with_a_hint() {
         &mut |_| {},
     )
     .await;
-    match outcome {
-        Outcome::Error(message) => assert!(message.contains("self-signed"), "{message}"),
-        other => panic!("expected an error, got {other:?}"),
-    }
+    assert_eq!(outcome, Outcome::UntrustedCertificate { origin: mock.base_url.clone() });
+    assert!(outcome.message().contains("self-signed"));
     assert!(session.close().await);
     mock.shutdown();
 }

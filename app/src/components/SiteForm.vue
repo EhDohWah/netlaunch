@@ -2,7 +2,7 @@
 // Add or edit a site. The password field is write-only: it always opens
 // empty, and when editing, leaving it empty keeps the stored password.
 // The app never sends a stored password to this screen.
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 
 const props = defineProps({
   // null when adding a new site.
@@ -29,6 +29,33 @@ const fields = reactive({
   window_mode: props.site?.window_mode ?? 'managed',
   notes: props.site?.notes ?? '',
 });
+// Devices on the admin's own network almost always have a self-signed
+// certificate. When adding an https site on a private address, tick the
+// setting for them, until they change it themselves.
+const selfSignedTouched = ref(editing.value);
+const suggestSelfSigned = computed(() => !editing.value && isPrivateHttps(fields.login_url));
+watch(suggestSelfSigned, (suggest) => {
+  if (!selfSignedTouched.value) fields.allow_self_signed = suggest;
+});
+
+/** True for https URLs on localhost, *.local/.lan/.internal/.home.arpa, or a private IP. */
+function isPrivateHttps(raw) {
+  let url;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'https:') return false;
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || /\.(local|lan|internal|home\.arpa)$/.test(host)) return true;
+  if (host === '::1' || /^f[cd]/.test(host) || host.startsWith('fe80:')) return true;
+  const ip = host.split('.').map(Number);
+  if (ip.length !== 4 || ip.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return false;
+  const [a, b] = ip;
+  return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+}
+
 // Kept apart from `fields` so it's easy to clear after every save attempt.
 const password = ref('');
 
@@ -110,9 +137,10 @@ async function submit() {
     <fieldset>
       <legend>Certificate</legend>
       <label class="inline">
-        <input v-model="fields.allow_self_signed" type="checkbox" />
+        <input v-model="fields.allow_self_signed" type="checkbox" @change="selfSignedTouched = true" />
         This site uses a self-signed certificate
       </label>
+      <span v-if="suggestSelfSigned && !selfSignedTouched && fields.allow_self_signed" class="muted small">Ticked because this is an https address on your own network. Untick it if the device has a proper certificate.</span>
       <span v-if="fields.allow_self_signed" class="muted small">Certificate errors are ignored for this site's window only. Turn it on only for devices on your own network.</span>
     </fieldset>
 

@@ -59,6 +59,17 @@ async function open(site) {
   await reload();
 }
 
+// The "Trust this certificate" button: tick the site's self-signed
+// setting, then open it again.
+async function trustAndOpen(site) {
+  try {
+    const updated = await api.trustCertificate(site.id);
+    await open(updated);
+  } catch (e) {
+    logins[site.id] = { busy: false, outcome: 'failed', message: String(e), warnings: [] };
+  }
+}
+
 function flash(text) {
   notice.value = text;
   setTimeout(() => {
@@ -120,6 +131,7 @@ async function remove(site) {
         :logins="logins"
         @add="form = { site: null }"
         @open="open"
+        @trust="trustAndOpen"
         @edit="(site) => (form = { site })"
         @delete="remove"
       />

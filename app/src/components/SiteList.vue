@@ -8,7 +8,7 @@ const props = defineProps({
   // Login state per site id, from App.vue.
   logins: { type: Object, required: true },
 });
-const emit = defineEmits(['add', 'open', 'edit', 'delete']);
+const emit = defineEmits(['add', 'open', 'trust', 'edit', 'delete']);
 
 const STAGES = {
   launching: 'Starting Edge…',
@@ -33,7 +33,7 @@ function statusOf(site) {
   const kind = login.outcome === 'success' ? 'ok' : login.outcome === 'mfa_handoff' || login.outcome === 'timeout' ? 'warn' : 'error';
   // "Logged in" says it all; the other outcomes explain themselves.
   const message = login.outcome === 'success' ? '' : login.message;
-  return { kind, label: OUTCOMES[login.outcome] ?? login.outcome, message, warnings: login.warnings ?? [] };
+  return { kind, label: OUTCOMES[login.outcome] ?? login.outcome, message, warnings: login.warnings ?? [], fix: login.fix };
 }
 
 const search = ref('');
@@ -99,6 +99,10 @@ function confirmDelete(site) {
               <strong>{{ statusOf(site).label }}</strong>
               <span v-if="statusOf(site).message"> · {{ statusOf(site).message }}</span>
               <div v-for="w in statusOf(site).warnings" :key="w" class="small">Warning: {{ w }}</div>
+              <div v-if="statusOf(site).fix === 'trust_certificate'" class="fix">
+                <button @click="emit('trust', site)">Trust this certificate and open again</button>
+                <span class="small">Only for devices on your own network.</span>
+              </div>
             </div>
           </div>
           <div class="site-actions">

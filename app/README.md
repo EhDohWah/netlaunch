@@ -58,7 +58,7 @@ Open logs in to each mock scenario. You need two terminals in the repo folder.
 3. Add one site per row below. For every one:
    - **Login page URL:** `https://localhost:8443/<scenario>/login`
    - **Username / password:** `mock-admin` / `Mock-Pa55-2026`
-   - **Self-signed certificate:** on (the mock site makes its own certificate)
+   - **Self-signed certificate:** on (the mock site makes its own certificate). The form ticks it for you on `https://localhost`. If you leave it off, Open stops with "Edge does not trust the certificate…" and offers **Trust this certificate and open again**.
    - **Recipe:** Generic, except `/two-step`, which needs "Two-step form"
 
 4. Press **Open** on each, and compare what you get:
@@ -91,7 +91,8 @@ If a line doesn't match, send the text under the site and what the Edge window s
 | `update_site` | `{ id, site }`, empty or null password keeps the stored one | the saved `Site` |
 | `delete_site` | `{ id }` | nothing |
 | `list_recipes` | none | `{ id, name }[]`, the built-in recipes |
-| `open_site` | `{ id }` | `{ outcome, message, warnings }`, when the login has finished. `outcome` is `success`, `mfa_handoff`, `failed`, `timeout` or `origin_mismatch` |
+| `open_site` | `{ id }` | `{ outcome, message, warnings, fix }`, when the login has finished. `outcome` is `success`, `mfa_handoff`, `failed`, `timeout` or `origin_mismatch`. `fix` is `"trust_certificate"` when Edge rejected the site's certificate, else null |
+| `trust_certificate` | `{ id }` | the saved `Site`, with its self-signed setting ticked |
 
 While `open_site` runs, the app sends `login-progress` events, `{ site_id, stage }`, where `stage` is `launching`, `loading`, `filling` or `waiting`.
 

@@ -285,7 +285,7 @@ fn map_error(error: playwright_rs::Error) -> DriverError {
         E::ChannelClosed => DriverError::Closed("connection to the browser closed".into()),
         E::TransportError(m) | E::ConnectionFailed(m) => DriverError::Closed(m),
         other => {
-            let text = other.to_string();
+            let text = trim_stack(&other.to_string());
             // Some closes arrive as plain protocol errors.
             if text.contains("has been closed") || text.contains("Target closed") {
                 DriverError::Closed(text)
@@ -296,6 +296,20 @@ fn map_error(error: playwright_rs::Error) -> DriverError {
             }
         }
     }
+}
+
+/// Playwright errors end with a JavaScript stack trace (`at
+/// _FrameSession._navigate (C:\Users\...\coreBundle.js:...)`) and
+/// sometimes a call log. Neither helps the admin, and the trace shows file
+/// paths, so both are cut.
+fn trim_stack(text: &str) -> String {
+    let mut end = text.len();
+    for marker in ["\n", " at _", " at async ", "Call log:"] {
+        if let Some(i) = text.find(marker) {
+            end = end.min(i);
+        }
+    }
+    text[..end].trim().to_string()
 }
 
 impl Session {
@@ -384,6 +398,17 @@ impl BrowserDriver for Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stack_traces_are_cut() {
+        let raw = "Protocol error: net::ERR_CERT_AUTHORITY_INVALID at https://localhost:8443/simple/login \
+                   Error: net::ERR_CERT_AUTHORITY_INVALID at https://localhost:8443/simple/login \
+                   at _FrameSession._navigate (C:\\Users\\x\\coreBundle.js:39087:17) at async _Frame.gotoImpl";
+        let trimmed = trim_stack(raw);
+        assert!(trimmed.contains("net::ERR_CERT_AUTHORITY_INVALID"));
+        assert!(!trimmed.contains("coreBundle"), "{trimmed}");
+        assert_eq!(trim_stack("a\nCall log:\n - waiting"), "a");
+    }
 
     #[test]
     fn short_origin_drops_paths() {

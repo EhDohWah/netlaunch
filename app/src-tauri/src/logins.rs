@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use netlaunch_driver_pw::{LaunchOptions, Profile, Session};
-use netlaunch_engine::{LoginTarget, Progress};
+use netlaunch_engine::{LoginTarget, Outcome, Progress};
 use netlaunch_vault::{LoginOutcome, ProfileMode, WindowMode};
 use serde::Serialize;
 
@@ -119,6 +119,10 @@ pub struct OpenResult {
     /// Isolation problems with the window (Edge policies can override
     /// NetLaunch's switches). Empty when all is well.
     pub warnings: Vec<String>,
+    /// A one-click fix the UI can offer. Only `"trust_certificate"` today:
+    /// the site's certificate wasn't trusted, so offer to tick its
+    /// self-signed setting and open it again.
+    pub fix: Option<&'static str>,
 }
 
 /// Runs a login for `site_id`. `progress` is called as it moves along.
@@ -138,7 +142,7 @@ pub async fn open_site(
         if let Err(e) = state.with_vault(|vault| vault.finish_login(log_id, outcome, Some(&message))) {
             tracing::warn!("couldn't record the login result: {e}");
         }
-        OpenResult { outcome, message, warnings }
+        OpenResult { outcome, message, warnings, fix: None }
     };
 
     progress(ProgressEvent { site_id, stage: "launching" });
@@ -195,11 +199,17 @@ pub async fn open_site(
         },
     )
     .await;
-    let result = finish(outcome.log_outcome(), outcome.message(), warnings);
+    let mut result = finish(outcome.log_outcome(), outcome.message(), warnings);
+    let untrusted = matches!(outcome, Outcome::UntrustedCertificate { .. });
+    if untrusted {
+        result.fix = Some("trust_certificate");
+    }
 
     // What happens to the window now.
-    if !session.is_running() {
-        // The admin closed it; tidy up.
+    if !session.is_running() || untrusted {
+        // Closed by the admin, or showing nothing but Edge's certificate
+        // warning. Close it: trusting the certificate needs a new Edge
+        // process anyway, because the setting is a launch switch.
         session.close().await;
     } else if site.window_mode == WindowMode::Released {
         session.release().await;
@@ -225,8 +235,9 @@ mod tests {
 
     #[test]
     fn results_never_carry_a_password_field() {
-        let result = OpenResult { outcome: LoginOutcome::Success, message: "Logged in.".into(), warnings: vec![] };
+        let result =
+            OpenResult { outcome: LoginOutcome::Success, message: "Logged in.".into(), warnings: vec![], fix: None };
         let json = serde_json::to_string(&result).unwrap();
-        assert_eq!(json, r#"{"outcome":"success","message":"Logged in.","warnings":[]}"#);
+        assert_eq!(json, r#"{"outcome":"success","message":"Logged in.","warnings":[],"fix":null}"#);
     }
 }

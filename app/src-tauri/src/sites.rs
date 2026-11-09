@@ -88,6 +88,17 @@ pub fn update(vault: &mut Vault, id: i64, input: SiteInput) -> Result<Site, Vaul
     vault.get_site(id)
 }
 
+/// Ticks the site's "self-signed certificate" setting, keeping everything
+/// else (including the password). Used by the "Trust this certificate"
+/// button that appears when Edge rejected the site's certificate.
+pub fn trust_certificate(vault: &mut Vault, id: i64) -> Result<Site, VaultError> {
+    let site = vault.get_site(id)?;
+    let mut update = SiteUpdate::from_site(&site);
+    update.allow_self_signed = true;
+    vault.update_site(id, update)?;
+    vault.get_site(id)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -193,6 +204,21 @@ mod tests {
         assert!(matches!(add(&mut vault, unknown), Err(VaultError::InvalidInput(_))));
         let two_step = add(&mut vault, input(&NEW.replace("generic-form", "two-step-form"))).unwrap();
         assert_eq!(two_step.recipe_id, "two-step-form");
+    }
+
+    #[test]
+    fn trusting_a_certificate_changes_only_that_setting() {
+        let mut vault = vault();
+        let site = add(&mut vault, input(&NEW.replace(r#""allow_self_signed": true"#, r#""allow_self_signed": false"#)))
+            .unwrap();
+        assert!(!site.allow_self_signed);
+
+        let trusted = trust_certificate(&mut vault, site.id).unwrap();
+        assert!(trusted.allow_self_signed);
+        assert_eq!(trusted.name, site.name);
+        assert_eq!(trusted.login_url, site.login_url);
+        assert_eq!(vault.reveal_password(site.id).unwrap().expose_secret(), "Ui-Secret-1111");
+        assert!(matches!(trust_certificate(&mut vault, 999), Err(VaultError::NotFound(999))));
     }
 
     #[test]

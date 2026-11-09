@@ -37,6 +37,7 @@ struct State {
     on_click: Option<Hook>,
     on_fill: Option<Hook>,
     fill_error: Option<DriverError>,
+    goto_error: Option<DriverError>,
 }
 
 #[derive(Default)]
@@ -66,6 +67,10 @@ impl FakeDriver {
 
     pub fn on_fill(&self, hook: impl FnMut(&mut Page, &str) + Send + 'static) {
         self.state.lock().unwrap().on_fill = Some(Box::new(hook));
+    }
+
+    pub fn fail_goto_with(&self, error: DriverError) {
+        self.state.lock().unwrap().goto_error = Some(error);
     }
 
     pub fn fail_fills_with(&self, error: DriverError) {
@@ -115,6 +120,9 @@ impl FakeDriver {
 impl BrowserDriver for FakeDriver {
     async fn goto(&self, url: &str) -> DriverResult<()> {
         self.check_open()?;
+        if let Some(error) = self.state.lock().unwrap().goto_error.clone() {
+            return Err(error);
+        }
         self.state.lock().unwrap().page.url = url.to_string();
         self.fire(|s| &mut s.on_goto, url);
         Ok(())

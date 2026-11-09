@@ -96,3 +96,4 @@ input[type="checkbox"], input[type="radio"] { width: auto; margin: 0 6px 0 0; }
 .login-status.ok { background: var(--ok-bg); color: var(--ok-text); }
 .login-status.warn { background: var(--warn-bg); color: var(--warn-text); }
 .login-status.error { background: var(--error-bg); color: var(--error-text); }
+.login-status .fix { margin-top: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

@@ -165,6 +165,8 @@ Passwords are encrypted per field with a random data key. That key is protected 
   - A redirect to any other origin, or a password field inside a frame from another origin, stops the login.
   - **How (M5):** the driver's selectors never look inside iframes, so any field the engine can fill is in the main frame. The engine compares the main frame's URL, which playwright-rs tracks from the browser's navigation events (the page's own scripts can't fake it), with the origin of the saved login URL. A mismatch stops the login before the password is even read from the vault.
 - **Self-signed exceptions stay per site.** Ignoring certificate errors applies only to the Edge process opened for that site, and only when the site has the self-signed flag on.
+  - Most consoles on the admin's own network have self-signed certificates, so the add-site form ticks the flag for an `https` URL on a private address (localhost, `.local`, `.lan`, `.internal`, `.home.arpa`, 10/8, 172.16/12, 192.168/16, 169.254/16, IPv6 local). The admin can untick it, and it's never ticked for a public address.
+  - When Edge rejects a certificate, the login stops with nothing typed and the window closes. The site offers "Trust this certificate and open again", which ticks the flag and retries.
 - **No passwords in logs or errors.** Usernames are allowed.
   - The log level is set in code, never from `RUST_LOG`.
   - `playwright_rs` is capped at `debug`, because at `trace` it logs filled text.
@@ -254,7 +256,8 @@ Each login is a small JSON recipe: ordered steps, plus rules that say what "logg
   - After the last step, the engine checks the page every 250 ms until a rule matches or `timeout_ms` runs out. It checks `success` first, then `mfa`, then `failure`: a dashboard may have an alert banner, and a 2FA page may mention an error.
   - **URL rules only count on the site's own origin.** Otherwise "the URL no longer contains `/login`" would also be true of a browser error page, or of a redirect to another site.
   - **`failure` (added in M5)** says the site rejected the login. A failure rule that already matched before the last step (a banner that's always on the login page) is ignored afterwards.
-- **Outcomes:** logged in; 2FA hand-over; rejected (`failed`); timed out; origin mismatch; or an error (the page didn't load, the window was closed). Every outcome except a closed window ends with the window brought to the front.
+- **Outcomes:** logged in; 2FA hand-over; rejected (`failed`); timed out; origin mismatch; an untrusted certificate (logged as `failed`); or an error (the page didn't load, the window was closed).
+  - Network failures get a plain sentence from the browser's `net::ERR_...` code (refused, address not found, no answer, TLS problems), never Playwright's stack trace. Every outcome except a closed window ends with the window brought to the front.
 - **Built-in recipes** are JSON files in `crates/engine/recipes/`, compiled into the app. They're checked when they load, and a site can only be saved with a recipe that exists.
   - `generic-form`: one page with username and password.
   - `two-step-form`: username, Next, then the password on a second page.

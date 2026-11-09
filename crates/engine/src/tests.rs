@@ -215,6 +215,46 @@ async fn form_that_never_appears_times_out() {
     assert_eq!(asked, 0);
 }
 
+/// A tab where loading the page fails with `error`.
+fn failing_goto(error: &str) -> FakeDriver {
+    let driver = FakeDriver::default();
+    driver.fail_goto_with(DriverError::Other(error.to_string()));
+    driver
+}
+
+#[tokio::test]
+async fn certificate_errors_are_recognized() {
+    // The shape of Playwright's real message, stack trace included.
+    let driver = failing_goto(
+        "Protocol error: net::ERR_CERT_AUTHORITY_INVALID at https://console.example:8443/login \
+         Error: net::ERR_CERT_AUTHORITY_INVALID at _FrameSession._navigate (C:\\x\\coreBundle.js:1:2)",
+    );
+    let (outcome, asked, _) = login(&driver, &generic(1000)).await;
+    assert_eq!(outcome, Outcome::UntrustedCertificate { origin: "https://console.example:8443".into() });
+    assert_eq!(outcome.log_outcome(), LoginOutcome::Failed);
+    assert_eq!(asked, 0);
+    let message = outcome.message();
+    assert!(message.contains("self-signed certificate"), "{message}");
+    assert!(!message.contains("coreBundle"), "no stack trace: {message}");
+}
+
+#[tokio::test]
+async fn network_errors_get_plain_messages() {
+    for (code, expect) in [
+        ("ERR_CONNECTION_REFUSED", "Nothing answered"),
+        ("ERR_NAME_NOT_RESOLVED", "couldn't be found"),
+        ("ERR_ADDRESS_UNREACHABLE", "didn't answer"),
+        ("ERR_SSL_PROTOCOL_ERROR", "secure connection"),
+        ("ERR_BLOCKED_BY_CLIENT", "(ERR_BLOCKED_BY_CLIENT)"),
+    ] {
+        let driver = failing_goto(&format!("Protocol error: net::{code} at https://x/ at _Frame (C:\\p.js:1:1)"));
+        let (outcome, _, _) = login(&driver, &generic(1000)).await;
+        let message = outcome.message();
+        assert!(message.contains(expect), "{code}: {message}");
+        assert!(!message.contains("p.js"), "{code}: {message}");
+    }
+}
+
 #[tokio::test]
 async fn closed_window_is_an_error_without_hand_over() {
     let driver = FakeDriver::login_form_at(LOGIN_URL);
