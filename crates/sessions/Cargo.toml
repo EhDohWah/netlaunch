@@ -1,0 +1,20 @@
+[package]
+name = "netlaunch-sessions"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "NetLaunch's open login windows: run a login, watch a 2FA hand-over, release or close the window."
+
+[dependencies]
+netlaunch-engine = { path = "../engine" }
+netlaunch-driver-pw = { path = "../driver-pw" }
+netlaunch-vault = { path = "../vault" }
+secrecy = "0.10"
+serde = { version = "1", features = ["derive"] }
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+netlaunch-mock-site = { path = "../mock-site" }
+serde_json.workspace = true

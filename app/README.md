@@ -1,4 +1,4 @@
-# NetLaunch app (M4, M5)
+# NetLaunch app (M4–M6)
 
 The desktop app: a Tauri 2 window with a Vue 3 + Vite frontend, wired to the vault (`crates/vault`) and the login engine (`crates/engine`, `crates/driver-pw`).
 
@@ -9,7 +9,8 @@ The desktop app: a Tauri 2 window with a Vue 3 + Vite frontend, wired to the vau
 - `src-tauri/`: the Rust side (crate `netlaunch-app`, binary `netlaunch`).
   - `main.rs` holds the commands.
   - `sites.rs` holds the site-list logic and tests.
-  - `logins.rs` holds what Open does: launch Edge, run the recipe, record the result, keep or hand over the window.
+  - `logins.rs` builds what Open needs from the vault and passes the open windows' news on (events for the panel, results for `login_log`). The windows themselves live in `crates/sessions`.
+- `src/components/SessionPanel.vue` is the "Open windows" panel.
   - `capabilities/default.json` grants only Tauri's core defaults.
 
 ## Run it on Windows
@@ -79,6 +80,18 @@ Open logs in to each mock scenario. You need two terminals in the repo folder.
 
 If a line doesn't match, send the text under the site and what the Edge window shows.
 
+## Check by hand (M6 "done when")
+
+Keep the mock site running, and use the sites from the M5 check.
+
+1. **`/mfa`, managed.** Open it. Under **Open windows** it says "Waiting for 2FA". Type `123456` in the Edge window and press Verify. Within a second the row says **Logged in · Logged in after 2FA**, and the window stays.
+2. **`/mfa`, released.** Edit the site, choose "Hand the window over to me", and Open. Same as above, but once you've typed the code the row disappears from Open windows, and the Edge window stays open on its own.
+3. **`/no-success`, both modes.** Managed: the row says **Yours to finish** after 30 s, and the window stays. Released: same message under the site, and the window is handed over at once.
+4. **Buttons.** On a managed window, try **Release** (the row goes, the window stays), **Close** (the window closes) and **Retry** (it closes and logs in again).
+5. **Closing by hand.** Close a managed Edge window yourself: its row disappears within a second or two.
+6. **Signed-in warning.** On your PC, Edge signs new windows in to your Windows account. Within about a minute of opening a site, its row should show the warning "Edge signed this window in to your Windows account…". Tell me if it never appears.
+7. **Exit.** Close NetLaunch with managed windows open: they close too.
+
 **Every attempt is recorded** in the vault's `login_log` table with its outcome and message, never the password.
 
 ## Commands
@@ -93,7 +106,12 @@ If a line doesn't match, send the text under the site and what the Edge window s
 | `list_recipes` | none | `{ id, name }[]`, the built-in recipes |
 | `open_site` | `{ id }` | `{ outcome, message, warnings, fix }`, when the login has finished. `outcome` is `success`, `mfa_handoff`, `failed`, `timeout` or `origin_mismatch`. `fix` is `"trust_certificate"` when Edge rejected the site's certificate, else null |
 | `trust_certificate` | `{ id }` | the saved `Site`, with its self-signed setting ticked |
+| `list_sessions` | none | `SessionView[]`: `{ site_id, site_name, state, message, warnings, window_mode }` |
+| `release_window` | `{ id }` | nothing; the window is handed over |
+| `close_window` | `{ id }` | nothing; the window is closed |
 
-While `open_site` runs, the app sends `login-progress` events, `{ site_id, stage }`, where `stage` is `launching`, `loading`, `filling` or `waiting`.
+Events:
+- `session-changed`: a `SessionView`, whenever a window's state changes. `state` is `launching`, `loading`, `filling`, `waiting` (the login running), then `waiting_for_2fa`, `logged_in`, `handed_over`, `failed` or `stopped`.
+- `session-ended`: `{ site_id, why }`, where `why` is `closed`, `released`, `window_closed` or `no_window`.
 
 On Windows the vault key is protected with DPAPI. On other systems the app builds and starts, but shows "NetLaunch runs on Windows only".

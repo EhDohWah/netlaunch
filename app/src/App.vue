@@ -1,10 +1,11 @@
 <script setup>
-// Top level: loads the vault status and the site list, and switches
-// between the list and the add/edit form.
+// Top level: loads the vault status and the site list, keeps the open
+// windows up to date, and switches between the list and the add/edit form.
 import { onMounted, onUnmounted, reactive, ref } from 'vue';
 import * as api from './api.js';
 import SiteList from './components/SiteList.vue';
 import SiteForm from './components/SiteForm.vue';
+import SessionPanel from './components/SessionPanel.vue';
 
 const status = ref(null);
 const sites = ref([]);
@@ -13,10 +14,15 @@ const loadError = ref('');
 const form = ref(null);
 const notice = ref('');
 const recipes = ref([]);
-// Login state per site id: { busy, stage } while running, then
-// { outcome, message, warnings }. Kept until the next Open of that site.
+// The result of each site's last Open: { busy } while running, then
+// { outcome, message, warnings, fix }. Shown under the site when it has no
+// open window (the panel shows those).
 const logins = reactive({});
-let stopListening = null;
+// Open windows by site id: SessionView, kept up to date by events.
+const sessions = reactive({});
+// Site ids with a Release/Close/Retry running.
+const pending = reactive({});
+const stopListening = [];
 
 async function reload() {
   loadError.value = '';
@@ -39,15 +45,20 @@ onMounted(async () => {
   } catch {
     recipes.value = [{ id: 'generic-form', name: 'Generic login form' }];
   }
-  stopListening = await api.onLoginProgress(({ site_id, stage }) => {
-    if (logins[site_id]?.busy) logins[site_id].stage = stage;
-  });
+  stopListening.push(await api.onSessionChanged((view) => (sessions[view.site_id] = view)));
+  stopListening.push(await api.onSessionEnded(({ site_id }) => delete sessions[site_id]));
+  // Events only bring changes; start from the current list.
+  try {
+    for (const view of await api.listSessions()) sessions[view.site_id] = view;
+  } catch {
+    // The vault error banner already explains it.
+  }
 });
 
-onUnmounted(() => stopListening?.());
+onUnmounted(() => stopListening.forEach((stop) => stop()));
 
 async function open(site) {
-  logins[site.id] = { busy: true, stage: 'launching' };
+  logins[site.id] = { busy: true };
   try {
     const result = await api.openSite(site.id);
     logins[site.id] = { busy: false, ...result };
@@ -67,6 +78,23 @@ async function trustAndOpen(site) {
     await open(updated);
   } catch (e) {
     logins[site.id] = { busy: false, outcome: 'failed', message: String(e), warnings: [] };
+  }
+}
+
+// The panel's buttons. Errors show under the site in the list.
+async function windowAction(view, action) {
+  pending[view.site_id] = true;
+  try {
+    if (action === 'release') await api.releaseWindow(view.site_id);
+    else await api.closeWindow(view.site_id);
+    if (action === 'retry') {
+      const site = sites.value.find((s) => s.id === view.site_id);
+      if (site) await open(site);
+    }
+  } catch (e) {
+    logins[view.site_id] = { busy: false, outcome: 'failed', message: String(e), warnings: [] };
+  } finally {
+    delete pending[view.site_id];
   }
 }
 
@@ -117,6 +145,15 @@ async function remove(site) {
       <p v-if="notice && !form" class="banner ok" role="status">{{ notice }}</p>
       <p v-if="loadError" class="banner error" role="alert">{{ loadError }}</p>
 
+      <SessionPanel
+        v-if="!form && Object.keys(sessions).length"
+        :sessions="Object.values(sessions).sort((a, b) => a.site_name.localeCompare(b.site_name))"
+        :pending="pending"
+        @release="(v) => windowAction(v, 'release')"
+        @close="(v) => windowAction(v, 'close')"
+        @retry="(v) => windowAction(v, 'retry')"
+      />
+
       <SiteForm
         v-if="form"
         :site="form.site"
@@ -129,6 +166,7 @@ async function remove(site) {
         v-else
         :sites="sites"
         :logins="logins"
+        :sessions="sessions"
         @add="form = { site: null }"
         @open="open"
         @trust="trustAndOpen"

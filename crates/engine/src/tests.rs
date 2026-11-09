@@ -256,6 +256,35 @@ async fn network_errors_get_plain_messages() {
 }
 
 #[tokio::test]
+async fn logged_in_watches_only_the_success_rule() {
+    let recipe = generic(1000);
+    let driver = FakeDriver::login_form_at(LOGIN_URL);
+    driver.goto_now(LOGIN_URL).await;
+
+    // On the 2FA page: not logged in yet, even with an error showing.
+    driver.on_click(|page, _| {
+        page.url = "https://console.example:8443/login/verify".into();
+        page.visible = [OTP, ALERT].map(String::from).into();
+    });
+    driver.click_now(SUBMIT).await;
+    assert_eq!(crate::logged_in(&driver, &recipe, LOGIN_URL).await, Ok(false));
+
+    // The admin typed the code; the dashboard shows.
+    driver.on_click(|page, _| page.url = "https://console.example:8443/home".into());
+    driver.click_now(OTP).await;
+    assert_eq!(crate::logged_in(&driver, &recipe, LOGIN_URL).await, Ok(true));
+
+    // A "dashboard" on another origin doesn't count.
+    driver.on_click(|page, _| page.url = "https://elsewhere.example/home".into());
+    driver.click_now(OTP).await;
+    assert_eq!(crate::logged_in(&driver, &recipe, LOGIN_URL).await, Ok(false));
+
+    driver.on_click(|page, _| page.closed = true);
+    driver.click_now(OTP).await;
+    assert!(matches!(crate::logged_in(&driver, &recipe, LOGIN_URL).await, Err(DriverError::Closed(_))));
+}
+
+#[tokio::test]
 async fn closed_window_is_an_error_without_hand_over() {
     let driver = FakeDriver::login_form_at(LOGIN_URL);
     driver.on_click(|page, _| page.closed = true);

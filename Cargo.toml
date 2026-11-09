@@ -4,6 +4,7 @@ members = [
     "crates/vault",
     "crates/engine",
     "crates/driver-pw",
+    "crates/sessions",
     "crates/mock-site",
     "spike",
     "app/src-tauri",

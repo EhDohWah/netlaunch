@@ -14,8 +14,9 @@ NetLaunch is a Windows desktop app (Rust + Tauri) that stores admin console logi
 - **M4 Tauri shell: done** (`app/`). Site list and add/edit screens; checked on the owner's PC. Decision 7: Vue 3 + Vite.
   - Tauri is pinned to 2.11 on both sides: the Rust crate `~2.11` and npm `~2.11.x`. 2.12 needs Rust 1.90. Bump all three together.
   - The owner builds with the GNU toolchain (MinGW). It works, but the linker warns about duplicate manifests. Switch to MSVC before the M7 installer.
-- **M5 login engine: built** (`crates/engine`, `crates/driver-pw`, Open in the app). Every mock scenario passes in headless Chromium; CI runs them on Windows with Edge. Waiting on the owner's by-hand run in the app (`app/README.md`).
-- **Next: M6** (2FA hand-over until success, session panel, signed-in warning).
+- **M5 login engine: done** (`crates/engine`, `crates/driver-pw`, Open in the app). Every mock scenario passes in Edge in CI and on the owner's PC.
+- **M6 windows: built** (`crates/sessions`, the Open windows panel). 2FA watched until success, managed and released modes, Release/Close/Retry, signed-in warning. Waiting on the owner's by-hand run (`app/README.md`).
+- **Next: M7** (UniFi recipe, installer bundling the Playwright driver, MSVC).
 - **CI** (`.github/workflows/ci.yml`) runs tests and `clippy -D warnings` on Windows and Linux for every push.
 
 ## Commands
@@ -24,6 +25,7 @@ NetLaunch is a Windows desktop app (Rust + Tauri) that stores admin console logi
 cargo build                                  # first build downloads the Playwright driver (~130 MB)
 cargo test --workspace --exclude netlaunch-app        # on Linux; the Windows-only app needs WebKitGTK to build here
 cargo test -p netlaunch-driver-pw --test mock_site    # the login engine in a real browser against the mock site
+cargo test -p netlaunch-sessions --test windows       # 2FA watch, managed/released windows, in a real browser
 cargo clippy --workspace --all-targets
 cd app && npm install && cargo tauri dev              # run the app (Windows); see app/README.md
 cargo run -p netlaunch-spike -- help         # M1 spike; see spike/README.md
@@ -42,7 +44,7 @@ cargo run -p netlaunch-mock-site             # mock login site on https://localh
 
   Wine's DPAPI isn't the real one; CI's `windows-latest` job is the real-Windows check.
 
-- **Browser tests** (`crates/driver-pw/tests/mock_site.rs`) use `NETLAUNCH_TEST_BROWSER`, else the installed Edge, else Chrome/Chromium in the usual Linux places. With none they print SKIPPED and pass; `NETLAUNCH_REQUIRE_BROWSER=1` (set in CI) makes that a failure. In a Linux container they add `--no-sandbox`.
+- **Browser tests** (`crates/driver-pw/tests/mock_site.rs`, `crates/sessions/tests/windows.rs`) use `NETLAUNCH_TEST_BROWSER`, else the installed Edge, else Chrome/Chromium in the usual Linux places. With none they print SKIPPED and pass; `NETLAUNCH_REQUIRE_BROWSER=1` (set in CI) makes that a failure. In a Linux container they add `--no-sandbox`.
 
 - **If the driver download fails** (HTTPS-inspecting proxy; the build script uses its own certificate list), assemble the folder by hand. Follow `spike/README.md` and point `PLAYWRIGHT_DRIVER_PATH` (or `spike --driver-path`) at it.
 
@@ -52,14 +54,16 @@ cargo run -p netlaunch-mock-site             # mock login site on https://localh
 crates/vault       SQLite + DPAPI + XChaCha20-Poly1305 (M3)
 crates/engine      recipes (JSON in recipes/), origin check, runner, BrowserDriver trait (M5); never imports playwright-rs
 crates/driver-pw   Edge launch + isolation (from the spike), Session = BrowserDriver on playwright-rs (M5)
+crates/sessions    the open windows: runs a login, watches 2FA, release/close, signed-in warning (M6); no Tauri
 crates/mock-site   axum test site with the spec's eight scenarios + a lookalike site (M2)
 spike/             M1 throwaway CLI
 app/               Tauri 2 app: Vue 3 frontend in src/, Rust commands in src-tauri/ (M4)
 docs/SPEC.md       the spec
 ```
 
-- `vault` and `engine` must not depend on Tauri, so `cargo test` covers them without a GUI.
-- **Tauri commands** (`app/src-tauri/src/main.rs`) are thin wrappers. Their logic lives in `sites.rs` (site list) and `logins.rs` (Open) as plain functions, so it's tested without a window.
+- `vault`, `engine`, `driver-pw` and `sessions` must not depend on Tauri, so `cargo test` covers them without a GUI.
+- **Sessions** keep a `std::sync::Mutex` map, never held across an `await`. A kept window is an `Arc<Session>`; Close and Release abort its watcher, then need sole ownership (`Arc::try_unwrap`), so don't hold `Sessions::driver()` copies for long.
+- **Tauri commands** (`app/src-tauri/src/main.rs`) are thin wrappers. Their logic lives in `sites.rs` (site list), `logins.rs` (Open, and the hooks that turn session news into events and `login_log` rows) and `crates/sessions`, so it's tested without a window.
 - **Capabilities** (`app/src-tauri/capabilities/default.json`): `core:default` only, so no shell, file system or opener plugins. Keep it that way.
 - **Wine check of the app.** The windows-gnu build links `WebView2Loader.dll` dynamically. Copy it from `~/.cargo/registry/src/*/webview2-com-sys-*/x64/` next to the test `.exe` before running it under Wine. MSVC builds link it statically.
 
@@ -68,7 +72,8 @@ docs/SPEC.md       the spec
 These come from the spec's security section. Treat a change that breaks one as a bug, even if tests pass.
 
 - **No Tauri command ever returns a password.** The frontend may send one when saving; nothing sends one back.
-  - `Vault::reveal_password` is the only way to get a password back. It's called in one place, the closure `logins.rs` hands to `netlaunch_engine::run`, which calls it when it fills the password field.
+  - `Vault::reveal_password` is the only way to get a password back. It's called in one place, the closure `logins.rs` builds for `Sessions::open`; the engine calls it when it fills the password field.
+- **The 2FA watcher only reads.** `netlaunch_engine::logged_in` checks the `success` rule; nothing after the hand-over types or clicks.
   - `Site` (what the UI gets) has no password field. A test checks its JSON contains no password.
   - Never enable the vault's `insecure-test-protector` feature outside tests; it stores the data key unprotected.
 - **Never log filled text.**

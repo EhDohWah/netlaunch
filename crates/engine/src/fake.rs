@@ -69,6 +69,17 @@ impl FakeDriver {
         self.state.lock().unwrap().on_fill = Some(Box::new(hook));
     }
 
+    /// Test helpers that act as the admin would: navigate or click
+    /// without going through the engine. Errors are ignored.
+    pub async fn goto_now(&self, url: &str) {
+        let _ = BrowserDriver::goto(self, url).await;
+    }
+
+    pub async fn click_now(&self, selector: &str) {
+        self.state.lock().unwrap().page.visible.insert(selector.to_string());
+        let _ = BrowserDriver::click(self, selector).await;
+    }
+
     pub fn fail_goto_with(&self, error: DriverError) {
         self.state.lock().unwrap().goto_error = Some(error);
     }

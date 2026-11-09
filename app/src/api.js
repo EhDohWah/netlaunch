@@ -27,11 +27,33 @@ export const listRecipes = () => invoke('list_recipes');
 
 /**
  * Launches Edge and logs in to the site. Resolves when the login has
- * finished, one way or another:
- * `{ outcome, message, warnings }`, where `outcome` is one of
+ * finished, one way or another: `{ outcome, message, warnings, fix }`,
+ * where `outcome` is one of
  * success | mfa_handoff | failed | timeout | origin_mismatch.
+ * A 2FA hand-over is then watched in the background (see onSessionChanged).
  */
 export const openSite = (id) => invoke('open_site', { id });
+
+/**
+ * The windows NetLaunch is looking after: SessionView[]
+ * `{ site_id, site_name, state, message, warnings, window_mode }`.
+ */
+export const listSessions = () => invoke('list_sessions');
+
+/** Hands the window over: Edge keeps running without NetLaunch. */
+export const releaseWindow = (id) => invoke('release_window', { id });
+
+/** Closes the window (and deletes a fresh profile). */
+export const closeWindow = (id) => invoke('close_window', { id });
+
+/** Calls `handler(view)` when a window's state changes or a window opens. */
+export const onSessionChanged = (handler) => listen('session-changed', (event) => handler(event.payload));
+
+/**
+ * Calls `handler({ site_id, why })` when a window leaves the list. `why` is
+ * closed | released | window_closed | no_window.
+ */
+export const onSessionEnded = (handler) => listen('session-ended', (event) => handler(event.payload));
 
 /**
  * Ticks the site's "self-signed certificate" setting (after Edge rejected
@@ -39,8 +61,3 @@ export const openSite = (id) => invoke('open_site', { id });
  */
 export const trustCertificate = (id) => invoke('trust_certificate', { id });
 
-/**
- * Calls `handler({ site_id, stage })` as logins progress. `stage` is
- * launching | loading | filling | waiting. Resolves to an unlisten function.
- */
-export const onLoginProgress = (handler) => listen('login-progress', (event) => handler(event.payload));

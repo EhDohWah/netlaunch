@@ -18,7 +18,7 @@ use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use tokio::time::Instant;
 
-use crate::driver::{BrowserDriver, DriverError};
+use crate::driver::{BrowserDriver, DriverError, DriverResult};
 use crate::recipe::{DEFAULT_WAIT_MS, FillValue, Recipe, Rule, RuleSet, Step};
 
 /// How often the page is checked against the rules after the last step.
@@ -244,6 +244,22 @@ async fn run_steps_and_wait<D: BrowserDriver>(
 
     progress(Progress::Waiting);
     wait_for_result(driver, recipe, &expected, &already_failing).await
+}
+
+/// True if the recipe's `success` rule matches the page right now. For
+/// watching a window after the hand-over (M6): the admin types the 2FA
+/// code, and this notices when the site lets them in.
+///
+/// Only reads the page; it never types or clicks. A closed window is an
+/// error (`DriverError::Closed`), so the caller can stop watching.
+pub async fn logged_in<D: BrowserDriver>(driver: &D, recipe: &Recipe, login_url: &str) -> DriverResult<bool> {
+    let expected = normalize_origin(login_url).map_err(|e| DriverError::Other(e.to_string()))?;
+    // Fails with Closed when the window is gone; anything else (the page is
+    // mid-load) just means "not yet".
+    if let Err(DriverError::Closed(m)) = driver.current_url().await {
+        return Err(DriverError::Closed(m));
+    }
+    Ok(first_match(driver, &recipe.success, &expected).await.is_some())
 }
 
 /// Polls the page until a rule matches or the recipe's timeout runs out.

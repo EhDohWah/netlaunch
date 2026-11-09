@@ -149,6 +149,20 @@ impl Session {
         &self.profile_dir
     }
 
+    /// The Edge process id (tests use it to check a released window
+    /// survives, and to clean it up afterwards).
+    pub fn pid(&self) -> Option<u32> {
+        self.child.lock().ok().map(|child| child.id())
+    }
+
+    /// True when Edge has signed this window in to an account, which on a
+    /// work PC is its implicit sign-in to the Windows account (decision 9:
+    /// accept and warn). Reads the profile's preferences, which Edge writes
+    /// a few seconds after signing in, so ask again later if it's false.
+    pub fn signed_in(&self) -> bool {
+        !edge::signed_in_account_paths(&self.profile_dir).is_empty()
+    }
+
     /// True while the Edge process NetLaunch started is running.
     pub fn is_running(&self) -> bool {
         match self.child.lock() {

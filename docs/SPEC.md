@@ -358,10 +358,18 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
      - **Driver** (`crates/driver-pw`): Edge launch, isolation and close, ported from the spike.
      - **Mock-site tests:** all six pages above pass in headless Chromium, and so do `/mfa` (hand-over) and `/no-success` (time-out), a self-signed site without the flag, and the redaction test with a real browser. CI runs them on Windows with Edge and on Linux with Chrome.
      - **App:** Open works. It shows each stage as it happens, then the result, and records each attempt in `login_log`. Managed windows close with the app; released ones are handed over after the login.
-     - Left for the owner: Open each mock scenario by hand from the app on Windows (see `app/README.md`).
+     - **Done** (Nov 9, 2026): Open works on the owner's PC, including the self-signed certificate flow.
    - **Not in M5:** watching a 2FA hand-over until it succeeds, the session panel (release, close, retry buttons) and the signed-in warning (decision 9) are M6.
 7. **M6 — 2FA handoff and window modes.** MFA detection, pause, managed and released modes.
    - Done when `/mfa` and `/no-success` behave as expected in both modes.
+   - Status: built (`crates/sessions`, the Open windows panel in the app).
+     - **2FA:** after the hand-over, a watcher checks the page every second (only the `success` rule; it never types). When it matches, the status flips to Logged in and `login_log` is updated to `success`. After 10 minutes without it, the window is the admin's (`timeout`).
+     - **Managed** windows stay until Close, Release, the admin closing the window (noticed within a second; a fresh profile is then deleted) or NetLaunch exiting.
+     - **Released** windows are handed over once the login is finished: at once, or after the 2FA.
+     - **Session panel** ("Open windows"): live status, Release (managed only), Close, Retry. A site with an open window can't be opened again until it's closed.
+     - **Signed-in warning** (decision 9): for two minutes after launch the watcher reads the profile's preferences for an account address (`account_info[…].email`, only the path is kept) and adds a warning. Edge writes the file a few seconds after signing in.
+     - **Tests** (`crates/sessions/tests/windows.rs`, real browser): `/mfa` and `/no-success` in both modes, a released window's Edge still running afterwards, an unfinished 2FA handed over, a window closed by hand, a site opened twice, and closing everything on exit.
+     - Left for the owner: the by-hand check in `app/README.md`. The signed-in warning can only be seen on a PC where Edge signs in (the owner's).
 8. **M7 — Real pilot and hardening.** UniFi recipe, log redaction check, installer build that bundles the Playwright driver.
    - Done when one-click login to UniFi works on the admin's PC from the installed app.
 
@@ -371,13 +379,13 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
 |---|---|---|---|---|
 | 1 | Browser driver | playwright-rs · chromiumoxide · Node.js sidecar | **Decided: playwright-rs**, behind the `BrowserDriver` trait | M1 |
 | 2 | What "local web UI" means | A mock test site · the real device web UIs | Mock site first, real UIs only in the pilot | M2 |
-| 3 | Window after login | Managed · released · per-site setting | Per-site setting, default managed | M6 |
+| 3 | Window after login | Managed · released · per-site setting | **Built (M6):** per-site setting, default managed; Release turns a managed window into a released one | M6 |
 | 4 | Master password on top of DPAPI | Yes, unlock on start · no, DPAPI only | **Decided: no** for the prototype; revisit before sharing the app | M3 |
 | 5 | Which browser | Installed Edge · installed Chrome · downloaded Chromium | **Decided: installed Edge** | M1 |
 | 6 | Session cookies | Fresh profile each launch · persistent profile per site | **Built (M5):** fresh by default, persistent as a per-site option (`%LOCALAPPDATA%\NetLaunch\profiles\<site id>`) | M5 |
 | 7 | Frontend | Vue 3 + Vite · plain HTML/JS | **Decided: Vue 3 + Vite** (JavaScript, no UI library) | M4 |
 | 8 | Encrypt usernames too | Yes · no | **Decided: no** (keeps search and display simple) | M3 |
-| 9 | Edge's implicit sign-in in the login window | Accept it (sync and extensions are off) · set `ImplicitSignInEnabled` = 0 for the user (also affects new profiles in the admin's own Edge) · detect it and warn | **Decided: accept and warn.** Confirmed by the third Windows run (`account_info[0].email`). The session panel warns when the window is signed in; no policy is changed. The warning arrives with the session panel in M6 | M6 |
+| 9 | Edge's implicit sign-in in the login window | Accept it (sync and extensions are off) · set `ImplicitSignInEnabled` = 0 for the user (also affects new profiles in the admin's own Edge) · detect it and warn | **Decided: accept and warn.** Confirmed by the third Windows run (`account_info[0].email`). The session panel warns when the window is signed in; no policy is changed. **Built in M6** | M6 |
 
 ## Risks
 

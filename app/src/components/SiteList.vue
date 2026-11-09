@@ -2,20 +2,16 @@
 // The home screen: sites grouped by group name, a search box, and
 // Open / Edit / Delete per site, with each site's login status under it.
 import { computed, ref } from 'vue';
+import { STATE_LABELS, stateKind } from '../states.js';
 
 const props = defineProps({
   sites: { type: Array, required: true },
-  // Login state per site id, from App.vue.
+  // The last Open's result per site id, from App.vue.
   logins: { type: Object, required: true },
+  // Open windows per site id (SessionView), from App.vue.
+  sessions: { type: Object, required: true },
 });
 const emit = defineEmits(['add', 'open', 'trust', 'edit', 'delete']);
-
-const STAGES = {
-  launching: 'Starting Edge…',
-  loading: 'Opening the login page…',
-  filling: 'Filling in the login form…',
-  waiting: 'Waiting for the site to answer…',
-};
 
 // Short labels in front of the engine's message.
 const OUTCOMES = {
@@ -27,9 +23,14 @@ const OUTCOMES = {
 };
 
 function statusOf(site) {
+  // An open window: one line here, the details in Open windows.
+  const view = props.sessions[site.id];
+  if (view) {
+    return { kind: stateKind(view.state), label: STATE_LABELS[view.state] ?? view.state, message: 'window open', warnings: [] };
+  }
   const login = props.logins[site.id];
   if (!login) return null;
-  if (login.busy) return { kind: 'busy', label: STAGES[login.stage] ?? 'Working…' };
+  if (login.busy) return { kind: 'busy', label: 'Starting…' };
   const kind = login.outcome === 'success' ? 'ok' : login.outcome === 'mfa_handoff' || login.outcome === 'timeout' ? 'warn' : 'error';
   // "Logged in" says it all; the other outcomes explain themselves.
   const message = login.outcome === 'success' ? '' : login.message;
@@ -112,7 +113,12 @@ function confirmDelete(site) {
               <button @click="confirming = null">Cancel</button>
             </template>
             <template v-else>
-              <button class="primary" :disabled="logins[site.id]?.busy" @click="emit('open', site)">
+              <button
+                class="primary"
+                :disabled="logins[site.id]?.busy || !!sessions[site.id]"
+                :title="sessions[site.id] ? 'Already open: see Open windows' : ''"
+                @click="emit('open', site)"
+              >
                 {{ logins[site.id]?.busy ? 'Opening…' : 'Open' }}
               </button>
               <button @click="emit('edit', site)">Edit</button>

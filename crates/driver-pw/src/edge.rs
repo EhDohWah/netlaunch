@@ -196,6 +196,47 @@ pub fn remove_profile(profile_dir: &Path) -> std::io::Result<()> {
     last
 }
 
+/// Where in the profile's preferences an account's email address is
+/// stored, such as `account_info[0].email`: the sign of Edge's implicit
+/// sign-in to the Windows account (decision 9). Only the JSON paths are
+/// returned, never the addresses.
+///
+/// Edge writes `Default/Preferences` a few seconds after a change, so
+/// while it runs this can lag behind; call it again later.
+pub fn signed_in_account_paths(profile_dir: &Path) -> Vec<String> {
+    let mut paths = Vec::new();
+    let Ok(text) = fs::read_to_string(profile_dir.join("Default").join("Preferences")) else {
+        return paths;
+    };
+    // Edge may be halfway through rewriting the file; a parse error just
+    // means "ask again later".
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
+        collect_email_paths(&json, String::new(), &mut paths);
+    }
+    paths
+}
+
+/// Records the JSON path of every `email` field holding an address.
+fn collect_email_paths(value: &serde_json::Value, path: String, out: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, v) in map {
+                let child = if path.is_empty() { key.clone() } else { format!("{path}.{key}") };
+                match v {
+                    serde_json::Value::String(s) if key == "email" && s.contains('@') => out.push(child),
+                    other => collect_email_paths(other, child, out),
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for (i, item) in items.iter().enumerate() {
+                collect_email_paths(item, format!("{path}[{i}]"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// A new, unique folder for a fresh profile under the system temp folder.
 /// It's deleted when the window is closed from NetLaunch.
 pub fn fresh_profile_dir() -> PathBuf {
@@ -236,6 +277,26 @@ mod tests {
         fs::write(&file, "{\"edge wrote\": true}").unwrap();
         seed_preferences(&dir).unwrap();
         assert_eq!(fs::read_to_string(&file).unwrap(), "{\"edge wrote\": true}");
+        remove_profile(&dir).unwrap();
+    }
+
+    #[test]
+    fn finds_a_signed_in_account_without_reading_the_address() {
+        let dir = fresh_profile_dir();
+        assert!(signed_in_account_paths(&dir).is_empty(), "no profile yet");
+        seed_preferences(&dir).unwrap();
+        assert!(signed_in_account_paths(&dir).is_empty(), "seeded profile is signed out");
+
+        fs::write(
+            dir.join("Default").join("Preferences"),
+            r#"{ "account_info": [ { "email": "someone@example.com", "gaia": "x" } ],
+                 "other": { "email": "not-an-address" } }"#,
+        )
+        .unwrap();
+        assert_eq!(signed_in_account_paths(&dir), vec!["account_info[0].email".to_string()]);
+
+        fs::write(dir.join("Default").join("Preferences"), "{ half written").unwrap();
+        assert!(signed_in_account_paths(&dir).is_empty());
         remove_profile(&dir).unwrap();
     }
 

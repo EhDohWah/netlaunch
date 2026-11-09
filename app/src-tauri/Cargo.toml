@@ -25,6 +25,7 @@ secrecy = { version = "0.10", features = ["serde"] }
 netlaunch-vault = { path = "../../crates/vault" }
 netlaunch-engine = { path = "../../crates/engine" }
 netlaunch-driver-pw = { path = "../../crates/driver-pw" }
+netlaunch-sessions = { path = "../../crates/sessions" }
 tracing.workspace = true
 tracing-subscriber.workspace = true
 

@@ -1,5 +1,5 @@
-//! NetLaunch desktop app: the Tauri shell around the vault (M4) and the
-//! login engine (M5).
+//! NetLaunch desktop app: the Tauri shell around the vault (M4), the login
+//! engine (M5) and the open windows (M6).
 //!
 //! The commands below are the frontend's only way into Rust. None of them
 //! returns a password; see `sites.rs`, `logins.rs` and the rules in
@@ -12,31 +12,43 @@ mod logins;
 mod sites;
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+use netlaunch_sessions::{OpenResult, SessionView, Sessions};
 use netlaunch_vault::{Site, Vault, VaultError};
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
+use tauri::{Manager, RunEvent, State};
 
 /// The vault, opened once at start-up. If it couldn't be opened, the error
 /// is kept so every command (and the banner in the UI) can report it.
-struct AppState {
-    vault: Mutex<Result<Vault, String>>,
-    path: Option<PathBuf>,
-    /// Browser windows opened by logins.
-    sessions: logins::Sessions,
-}
+///
+/// Shared (`Arc`) because the window watchers record 2FA results in the
+/// login history from background tasks.
+#[derive(Clone)]
+pub struct SharedVault(Arc<Mutex<Result<Vault, String>>>);
 
-impl AppState {
+impl SharedVault {
     /// Runs `f` with the vault, turning errors into strings for the UI.
-    /// `VaultError` messages never contain a password.
-    fn with_vault<T>(&self, f: impl FnOnce(&mut Vault) -> Result<T, VaultError>) -> Result<T, String> {
-        let mut guard = self.vault.lock().map_err(|_| "the vault is unavailable after an earlier error".to_string())?;
+    /// `VaultError` messages never contain a password. The lock is held
+    /// only while `f` runs, never across an `await`.
+    pub fn with<T>(&self, f: impl FnOnce(&mut Vault) -> Result<T, VaultError>) -> Result<T, String> {
+        let mut guard = self.0.lock().map_err(|_| "the vault is unavailable after an earlier error".to_string())?;
         match guard.as_mut() {
             Ok(vault) => f(vault).map_err(|e| e.to_string()),
             Err(message) => Err(message.clone()),
         }
     }
+
+    fn error(&self) -> Option<String> {
+        self.0.lock().ok().and_then(|guard| guard.as_ref().err().cloned())
+    }
+}
+
+struct AppState {
+    vault: SharedVault,
+    path: Option<PathBuf>,
+    /// The browser windows logins opened.
+    sessions: Sessions,
 }
 
 /// Opens `%LOCALAPPDATA%\NetLaunch\vault.db` with its key protected by
@@ -67,7 +79,7 @@ struct VaultStatus {
 
 #[tauri::command]
 fn vault_status(state: State<'_, AppState>) -> VaultStatus {
-    let error = state.vault.lock().ok().and_then(|guard| guard.as_ref().err().cloned());
+    let error = state.vault.error();
     VaultStatus {
         ok: error.is_none(),
         path: state.path.as_ref().map(|p| p.display().to_string()),
@@ -77,29 +89,33 @@ fn vault_status(state: State<'_, AppState>) -> VaultStatus {
 
 #[tauri::command]
 fn list_sites(state: State<'_, AppState>) -> Result<Vec<Site>, String> {
-    state.with_vault(|vault| vault.list_sites())
+    state.vault.with(|vault| vault.list_sites())
 }
 
 #[tauri::command]
 fn add_site(state: State<'_, AppState>, site: sites::SiteInput) -> Result<Site, String> {
-    state.with_vault(|vault| sites::add(vault, site))
+    state.vault.with(|vault| sites::add(vault, site))
 }
 
 #[tauri::command]
 fn update_site(state: State<'_, AppState>, id: i64, site: sites::SiteInput) -> Result<Site, String> {
-    state.with_vault(|vault| sites::update(vault, id, site))
+    state.vault.with(|vault| sites::update(vault, id, site))
 }
 
+/// Deletes a site, closing its window first if one is open.
 #[tauri::command]
-fn delete_site(state: State<'_, AppState>, id: i64) -> Result<(), String> {
-    state.with_vault(|vault| vault.delete_site(id))
+async fn delete_site(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+    if state.sessions.list().iter().any(|view| view.site_id == id) {
+        state.sessions.close(id).await?;
+    }
+    state.vault.with(|vault| vault.delete_site(id))
 }
 
 /// The "Trust this certificate" button: ticks the site's self-signed
 /// setting. The frontend then opens the site again.
 #[tauri::command]
 fn trust_certificate(state: State<'_, AppState>, id: i64) -> Result<Site, String> {
-    state.with_vault(|vault| sites::trust_certificate(vault, id))
+    state.vault.with(|vault| sites::trust_certificate(vault, id))
 }
 
 #[derive(Serialize)]
@@ -115,15 +131,30 @@ fn list_recipes() -> Vec<RecipeInfo> {
 }
 
 /// The Open button: launches Edge and logs in. Progress arrives as
-/// `login-progress` events; this resolves with the result.
+/// `session-changed` events; this resolves with the result.
 ///
 /// `async`, so the login (up to a minute) runs without freezing the window.
 #[tauri::command]
-async fn open_site(app: AppHandle, state: State<'_, AppState>, id: i64) -> Result<logins::OpenResult, String> {
-    logins::open_site(&state, id, move |event| {
-        let _ = app.emit("login-progress", event);
-    })
-    .await
+async fn open_site(state: State<'_, AppState>, id: i64) -> Result<OpenResult, String> {
+    logins::open_site(&state.vault, &state.sessions, id).await
+}
+
+/// The "Open windows" panel's rows.
+#[tauri::command]
+fn list_sessions(state: State<'_, AppState>) -> Vec<SessionView> {
+    state.sessions.list()
+}
+
+/// Release: hand the window over; Edge keeps running without NetLaunch.
+#[tauri::command]
+async fn release_window(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+    state.sessions.release(id).await
+}
+
+/// Close: close the window (and delete a fresh profile).
+#[tauri::command]
+async fn close_window(state: State<'_, AppState>, id: i64) -> Result<(), String> {
+    state.sessions.close(id).await
 }
 
 /// Logs go to stderr (the `cargo tauri dev` console). The level is set
@@ -137,17 +168,27 @@ fn init_logging() {
 fn main() {
     init_logging();
     let (vault, path) = open_vault();
+    let vault = SharedVault(Arc::new(Mutex::new(vault)));
+
     let app = tauri::Builder::default()
-        .manage(AppState { vault: Mutex::new(vault), path, sessions: logins::Sessions::default() })
+        // The sessions send events, so they're made once the app exists.
+        .setup(move |app| {
+            let hooks = logins::TauriHooks { app: app.handle().clone(), vault: vault.clone() };
+            app.manage(AppState { vault, path, sessions: logins::new_sessions(hooks) });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             vault_status,
             list_sites,
             add_site,
             update_site,
             delete_site,
+            trust_certificate,
             list_recipes,
             open_site,
-            trust_certificate
+            list_sessions,
+            release_window,
+            close_window
         ])
         .build(tauri::generate_context!())
         .expect("error while building NetLaunch");
@@ -156,14 +197,8 @@ fn main() {
         // Managed windows close with the app (spec: "Closing the app
         // closes the window"). Released windows aren't in the list.
         if let RunEvent::Exit = event {
-            let sessions = handle.state::<AppState>().sessions.take_all();
-            if !sessions.is_empty() {
-                tauri::async_runtime::block_on(async {
-                    for session in sessions {
-                        session.close().await;
-                    }
-                });
-            }
+            let sessions = handle.state::<AppState>().sessions.clone();
+            tauri::async_runtime::block_on(sessions.close_all());
         }
     });
 }

@@ -23,7 +23,7 @@ mod tests;
 
 pub use driver::{BrowserDriver, DriverError, DriverResult};
 pub use recipe::{Recipe, builtin, builtin_list};
-pub use run::{LoginTarget, Outcome, Progress, run};
+pub use run::{LoginTarget, Outcome, Progress, logged_in, run};
 
 /// The `tracing` filter for anything that runs the engine with
 /// playwright-rs: `base` for everything (`info` normally), but never more

@@ -2234,6 +2234,7 @@ version = "0.1.0"
 dependencies = [
  "netlaunch-driver-pw",
  "netlaunch-engine",
+ "netlaunch-sessions",
  "netlaunch-vault",
  "secrecy",
  "serde",
@@ -2286,6 +2287,21 @@ dependencies = [
  "serde_json",
  "tokio",
  "tower",
+]
+
+[[package]]
+name = "netlaunch-sessions"
+version = "0.1.0"
+dependencies = [
+ "netlaunch-driver-pw",
+ "netlaunch-engine",
+ "netlaunch-mock-site",
+ "netlaunch-vault",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
