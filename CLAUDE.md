@@ -8,8 +8,10 @@ NetLaunch is a Windows desktop app (Rust + Tauri) that stores admin console logi
 
 - **M1 browser spike: done** (Windows 11, Edge 155). Attach, release and managed close all work, and the isolation switches stop sync, extensions and password saving.
 - Edge's implicit sign-in to the Windows account remains (`account_info[0].email`; open decision 9).
-- **M2 mock site: built** (`crates/mock-site`). Route tests pass and all scenarios pass in Chromium; the by-hand check in Edge on Windows is pending. Decision 9: accept and warn.
-- **Everything else** (vault, engine, driver, Tauri app) is a placeholder crate.
+- **M2 mock site: done** (`crates/mock-site`). Route tests pass, all scenarios pass in Chromium, and you checked them by hand in Edge. Decision 9: accept and warn.
+- **M3 vault: built** (`crates/vault`). Tests pass on Linux and on Windows under Wine; CI runs them on real Windows. Decisions 4 and 8: no master password, usernames not encrypted.
+- **Everything else** (engine, driver, Tauri app) is a placeholder crate.
+- **CI** (`.github/workflows/ci.yml`) runs tests and `clippy -D warnings` on Windows and Linux for every push.
 
 ## Commands
 
@@ -21,12 +23,17 @@ cargo run -p netlaunch-spike -- help         # M1 spike; see spike/README.md
 cargo run -p netlaunch-mock-site             # mock login site on https://localhost:8443; see crates/mock-site/README.md
 ```
 
-- **Windows-only code** (registry, DPAPI, process flags) is behind `#[cfg(windows)]`. From Linux, type-check it with:
+- **Windows-only code** (registry, DPAPI, process flags) is behind `#[cfg(windows)]`. From Linux, build and run it with mingw and Wine. Bundled SQLite and `ring` need the mingw C compiler.
 
   ```bash
+  apt-get install -y gcc-mingw-w64-x86-64 wine64
   rustup target add x86_64-pc-windows-gnu
-  PLAYWRIGHT_SKIP_DRIVER_DOWNLOAD=1 cargo check -p netlaunch-spike --target x86_64-pc-windows-gnu
+  PLAYWRIGHT_SKIP_DRIVER_DOWNLOAD=1 cargo clippy --workspace --all-targets --target x86_64-pc-windows-gnu -- -D warnings
+  cargo test -p netlaunch-vault --target x86_64-pc-windows-gnu --no-run
+  WINEDEBUG=-all /usr/lib/wine/wine64 target/x86_64-pc-windows-gnu/debug/deps/netlaunch_vault-<hash>.exe
   ```
+
+  Wine's DPAPI isn't the real one; CI's `windows-latest` job is the real-Windows check.
 
 - **If the driver download fails** (HTTPS-inspecting proxy; the build script uses its own certificate list), assemble the folder by hand. Follow `spike/README.md` and point `PLAYWRIGHT_DRIVER_PATH` (or `spike --driver-path`) at it.
 
@@ -49,6 +56,9 @@ docs/SPEC.md       the spec
 These come from the spec's security section. Treat a change that breaks one as a bug, even if tests pass.
 
 - **No Tauri command ever returns a password.** The frontend may send one when saving; nothing sends one back.
+  - `Vault::reveal_password` is the only way to get a password back. Only the login engine calls it, at fill time.
+  - `Site` (what the UI gets) has no password field. A test checks its JSON contains no password.
+  - Never enable the vault's `insecure-test-protector` feature outside tests; it stores the data key unprotected.
 - **Never log filled text.**
   - Set the log level in code, never from `RUST_LOG`.
   - Cap `playwright_rs` at `debug`: at `trace` it logs the full JSON of every request, including the password being filled. The spike proved this.

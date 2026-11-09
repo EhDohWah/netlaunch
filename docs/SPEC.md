@@ -145,9 +145,12 @@ Passwords are encrypted per field with a random data key. That key is protected 
 ### Key handling
 
 1. First run: generate a random 256-bit data key.
-2. Wrap it with DPAPI (`CryptProtectData`, current-user scope) and store the wrapped blob in `app_meta` with a `key_version`.
+2. Wrap it with DPAPI (`CryptProtectData`, current-user scope, `CRYPTPROTECT_UI_FORBIDDEN`, with fixed app entropy) and store the wrapped blob in `app_meta`.
+   - `app_meta` also holds `key_protector` (`dpapi-user`) and `key_version` (`1`).
+   - Opening a vault with a different kind of protector fails with a clear error rather than garbage.
 3. On start: unwrap with DPAPI and hold the key in memory using the `secrecy` / `zeroize` crates (wiped on drop).
-4. Optional master password on top (Argon2id-derived key); see Open decisions.
+4. **No master password** (decision 4). The vault takes the key protector as a parameter (`KeyProtector` trait), so one can be added later without changing the vault.
+5. Tests on machines without DPAPI use `InsecureTestProtector`. It is only available in tests and behind the `insecure-test-protector` feature, which the app never enables.
 
 ### Encrypting a password
 
@@ -175,7 +178,7 @@ One SQLite file in `%LOCALAPPDATA%\NetLaunch\vault.db` with three tables. Only t
 
 ```sql
 CREATE TABLE app_meta (
-  key   TEXT PRIMARY KEY,   -- 'schema_version', 'wrapped_data_key', 'key_version'
+  key   TEXT PRIMARY KEY,   -- 'schema_version', 'wrapped_data_key', 'key_protector', 'key_version'
   value BLOB NOT NULL
 );
 
@@ -209,6 +212,16 @@ CREATE TABLE login_log (
 ```
 
 Recipes live as JSON files shipped with the app, referenced by `recipe_id`. Schema changes go through numbered migrations tracked by `schema_version`.
+
+Implementation notes (`crates/vault`, M3):
+- SQLite is bundled into the app (`rusqlite` with `bundled`), so nothing has to be installed on the PC.
+- **Pragmas:**
+  - `foreign_keys = ON`, which the `login_log` cascade needs.
+  - `secure_delete = ON`, so replaced and deleted ciphertexts are zeroed in the file.
+  - `journal_mode = DELETE`, so there's one file on disk.
+- **Timestamps** are ISO 8601 UTC with milliseconds, made by SQLite.
+- **A newer schema is refused.** Opening a file with a `schema_version` newer than the build knows fails rather than risking damage.
+- **Only the engine sees passwords.** `Vault::reveal_password` is the only way to get a password back, and only the login engine may call it. `Site` has no password field.
 
 ## Site recipes
 
@@ -312,6 +325,7 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
    - Status: built. 13 route tests pass, and all eight scenarios pass when driven in headless Chromium. The by-hand check in Edge on Windows is pending.
 4. **M3 — Vault.** SQLite schema, DPAPI-wrapped key, encrypt/decrypt, unit tests.
    - Done when all vault tests pass and the `.db` file shows no plaintext password.
+   - Status: built. 28 tests pass on Linux, and 31 on Windows (cross-compiled, run under Wine), including DPAPI and a DPAPI vault whose file holds neither the passwords nor the raw key. The GitHub Actions run on `windows-latest` is the real-Windows check.
 5. **M4 — Tauri shell.** Site list and add/edit screens wired to the vault.
    - Done when sites survive an app restart and no command returns a password.
 6. **M5 — Login engine.** Recipe runner, origin check, success detection, wired to the Open button.
@@ -328,11 +342,11 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
 | 1 | Browser driver | playwright-rs · chromiumoxide · Node.js sidecar | **Decided: playwright-rs**, behind the `BrowserDriver` trait | M1 |
 | 2 | What "local web UI" means | A mock test site · the real device web UIs | Mock site first, real UIs only in the pilot | M2 |
 | 3 | Window after login | Managed · released · per-site setting | Per-site setting, default managed | M6 |
-| 4 | Master password on top of DPAPI | Yes, unlock on start · no, DPAPI only | No for the prototype, revisit before sharing the app | M3 |
+| 4 | Master password on top of DPAPI | Yes, unlock on start · no, DPAPI only | **Decided: no** for the prototype; revisit before sharing the app | M3 |
 | 5 | Which browser | Installed Edge · installed Chrome · downloaded Chromium | **Decided: installed Edge** | M1 |
 | 6 | Session cookies | Fresh profile each launch · persistent profile per site | Fresh by default, persistent as a per-site option | M5 |
 | 7 | Frontend | Vue 3 + Vite · plain HTML/JS | Vue 3 + Vite | M4 |
-| 8 | Encrypt usernames too | Yes · no | No (keeps search and display simple) | M3 |
+| 8 | Encrypt usernames too | Yes · no | **Decided: no** (keeps search and display simple) | M3 |
 | 9 | Edge's implicit sign-in in the login window | Accept it (sync and extensions are off) · set `ImplicitSignInEnabled` = 0 for the user (also affects new profiles in the admin's own Edge) · detect it and warn | **Decided: accept and warn.** Confirmed by the third Windows run (`account_info[0].email`). The session panel warns when the window is signed in; no policy is changed | M5 |
 
 ## Risks
