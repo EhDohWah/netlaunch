@@ -381,6 +381,8 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
      - **Log file:** `%LOCALAPPDATA%\NetLaunch\logs\netlaunch.log`, rotated at 5 MB, same filter as before. The redaction check runs on it (`app/README.md`).
      - **Leftover fresh profiles** (released windows since closed, abrupt exits) are deleted at start-up. A folder whose `lockfile` Edge still holds is skipped, and so is any folder younger than 10 minutes.
      - **Edge start-up timeout** raised from 20 s to 60 s: CI's first launches on a fresh runner took longer.
+     - **First green installer run** (Nov 9, 2026, CI run 10): a 28 MB installer. The self-check used the bundled driver with the build's own copy hidden, and Edge quit cleanly. Uninstalling kept `vault.db`.
+     - **The closed-window message names its cause** after one Windows run reported `/redirect-away`'s window closed (it had passed five times). Liveness now falls back to the DevTools port when the process NetLaunch started has exited, since Edge can carry on in another process.
      - **UniFi recipe:** waiting for the owner's `probe` output from the real login page (`probe/README.md`). The generic recipe may already work.
 
 ## Open decisions
