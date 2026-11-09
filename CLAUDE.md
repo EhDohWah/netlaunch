@@ -73,9 +73,9 @@ These come from the spec's security section. Treat a change that breaks one as a
 
 - **No Tauri command ever returns a password.** The frontend may send one when saving; nothing sends one back.
   - `Vault::reveal_password` is the only way to get a password back. It's called in one place, the closure `logins.rs` builds for `Sessions::open`; the engine calls it when it fills the password field.
-- **The 2FA watcher only reads.** `netlaunch_engine::logged_in` checks the `success` rule; nothing after the hand-over types or clicks.
   - `Site` (what the UI gets) has no password field. A test checks its JSON contains no password.
   - Never enable the vault's `insecure-test-protector` feature outside tests; it stores the data key unprotected.
+- **The 2FA watcher only reads.** `netlaunch_engine::logged_in` checks the `success` rule; nothing after the hand-over types or clicks.
 - **Never log filled text.**
   - Set the log level in code, never from `RUST_LOG`.
   - Cap `playwright_rs` at `debug`: at `trace` it logs the full JSON of every request, including the password being filled. The spike proved this.
