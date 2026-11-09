@@ -10,6 +10,8 @@
   --ok-text: #1e5631;
   --error-bg: #fdecea;
   --error-text: #8a1c14;
+  --warn-bg: #fff4e0;
+  --warn-text: #7a4a00;
   --tag-bg: #eef1f5;
   font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 15px;
@@ -30,6 +32,8 @@
     --ok-text: #a8e0b5;
     --error-bg: #3d1f1d;
     --error-text: #f4b4ae;
+    --warn-bg: #3a2e14;
+    --warn-text: #f3d08a;
     --tag-bg: #2a3440;
   }
 }
@@ -86,3 +90,9 @@ input[type="checkbox"], input[type="radio"] { width: auto; margin: 0 6px 0 0; }
 .site-form fieldset { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px 10px; display: grid; gap: 6px; margin: 0; }
 .site-form legend { padding: 0 4px; color: var(--muted); font-size: 0.85rem; }
 .form-actions { display: flex; gap: 8px; }
+
+.login-status { margin-top: 6px; font-size: 0.85rem; padding: 4px 8px; border-radius: 4px; overflow-wrap: anywhere; }
+.login-status.busy { color: var(--muted); padding-left: 0; }
+.login-status.ok { background: var(--ok-bg); color: var(--ok-text); }
+.login-status.warn { background: var(--warn-bg); color: var(--warn-text); }
+.login-status.error { background: var(--error-bg); color: var(--error-text); }

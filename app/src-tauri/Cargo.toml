@@ -23,8 +23,13 @@ serde = { version = "1", features = ["derive"] }
 # It can't be serialized, so a command can't return one by mistake.
 secrecy = { version = "0.10", features = ["serde"] }
 netlaunch-vault = { path = "../../crates/vault" }
+netlaunch-engine = { path = "../../crates/engine" }
+netlaunch-driver-pw = { path = "../../crates/driver-pw" }
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [dev-dependencies]
 # Tests only: open a vault without DPAPI.
 netlaunch-vault = { path = "../../crates/vault", features = ["insecure-test-protector"] }
 serde_json.workspace = true
+tokio.workspace = true

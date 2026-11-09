@@ -4,7 +4,7 @@ One-click logins to internal admin consoles (UniFi, routers, switches, Proxmox, 
 
 NetLaunch stores each login encrypted, opens an automated Edge window, fills the login form, and hands the window to you at any 2FA prompt. It never reads or types the 2FA code.
 
-**Status:** early development. M1 (browser spike), M2 (mock login site) and M3 (vault) are done; M4 (the Tauri app shell) is built. Next is M5 (login engine).
+**Status:** early development. M1 (browser spike) to M4 (the Tauri app shell) are done. M5 (login engine) is built: Open logs in to every mock scenario. Next is M6 (2FA hand-over and window modes).
 
 - [`docs/SPEC.md`](docs/SPEC.md): the spec — goals, architecture, security rules, milestones
 - [`spike/README.md`](spike/README.md): how to run the M1 browser spike on Windows

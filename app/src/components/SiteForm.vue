@@ -9,6 +9,8 @@ const props = defineProps({
   site: { type: Object, default: null },
   // Existing group names, offered as suggestions.
   groups: { type: Array, default: () => [] },
+  // The built-in login recipes: [{ id, name }].
+  recipes: { type: Array, default: () => [] },
   // async (fields) => void. Throws with the vault's message on failure.
   save: { type: Function, required: true },
 });
@@ -100,8 +102,9 @@ async function submit() {
     <label>
       Login recipe
       <select v-model="fields.recipe_id">
-        <option value="generic-form">Generic login form</option>
+        <option v-for="r in recipes" :key="r.id" :value="r.id">{{ r.name }}</option>
       </select>
+      <span class="muted small">Generic works for a username and password on one page. Use two-step when the password is asked on a second page.</span>
     </label>
 
     <fieldset>

@@ -10,9 +10,10 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  # No test launches a browser yet, so skip the ~130 MB Playwright driver
-  # download. Remove this when the M5 engine tests drive Edge.
-  PLAYWRIGHT_SKIP_DRIVER_DOWNLOAD: "1"
+  # The login-engine tests (crates/driver-pw/tests/mock_site.rs) drive a
+  # real browser: Edge on Windows, Chrome on Linux. Without one they would
+  # skip; here a missing browser is a failure.
+  NETLAUNCH_REQUIRE_BROWSER: "1"
 
 jobs:
   test:
@@ -30,12 +31,23 @@ jobs:
           - os: ubuntu-latest
             cargo_args: --workspace --exclude netlaunch-app
     runs-on: ${{ matrix.os }}
+    env:
+      # playwright-rs's build script assembles the Playwright driver (Node +
+      # playwright-core, ~130 MB) here; cached below so it's fetched once.
+      PLAYWRIGHT_DRIVER_CACHE_DIR: ${{ github.workspace }}/.playwright-driver
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Cache the Playwright driver
+        uses: actions/cache@v4
+        with:
+          path: .playwright-driver
+          # The driver version is fixed by the pinned playwright-rs version.
+          key: playwright-driver-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: playwright-driver-${{ runner.os }}-
       - name: Tests
         run: cargo test ${{ matrix.cargo_args }}
       - name: Clippy

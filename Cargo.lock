@@ -2232,21 +2232,46 @@ dependencies = [
 name = "netlaunch-app"
 version = "0.1.0"
 dependencies = [
+ "netlaunch-driver-pw",
+ "netlaunch-engine",
  "netlaunch-vault",
  "secrecy",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
 name = "netlaunch-driver-pw"
 version = "0.1.0"
+dependencies = [
+ "netlaunch-engine",
+ "netlaunch-mock-site",
+ "playwright-rs",
+ "secrecy",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "windows-registry",
+]
 
 [[package]]
 name = "netlaunch-engine"
 version = "0.1.0"
+dependencies = [
+ "netlaunch-vault",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "netlaunch-mock-site"

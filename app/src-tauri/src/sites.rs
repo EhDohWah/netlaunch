@@ -41,12 +41,22 @@ fn default_recipe() -> String {
     "generic-form".to_string()
 }
 
+/// Only recipes the engine knows can be saved, so Open never meets an
+/// unknown one.
+fn check_recipe(id: &str) -> Result<(), VaultError> {
+    match netlaunch_engine::builtin(id) {
+        Some(_) => Ok(()),
+        None => Err(VaultError::InvalidInput(format!("unknown login recipe '{id}'"))),
+    }
+}
+
 /// `None` for a missing or empty password.
 fn non_empty(password: Option<SecretString>) -> Option<SecretString> {
     password.filter(|p| !p.expose_secret().is_empty())
 }
 
 pub fn add(vault: &mut Vault, input: SiteInput) -> Result<Site, VaultError> {
+    check_recipe(&input.recipe_id)?;
     let password =
         non_empty(input.password).ok_or_else(|| VaultError::InvalidInput("a password is required".into()))?;
     let mut site = NewSite::new(&input.name, &input.login_url, &input.username, password);
@@ -61,6 +71,7 @@ pub fn add(vault: &mut Vault, input: SiteInput) -> Result<Site, VaultError> {
 }
 
 pub fn update(vault: &mut Vault, id: i64, input: SiteInput) -> Result<Site, VaultError> {
+    check_recipe(&input.recipe_id)?;
     let update = SiteUpdate {
         name: input.name,
         group_name: input.group_name,
@@ -173,6 +184,15 @@ mod tests {
     #[test]
     fn the_input_never_prints_its_password() {
         assert!(!format!("{:?}", input(NEW)).contains("Ui-Secret-1111"));
+    }
+
+    #[test]
+    fn only_known_recipes_can_be_saved() {
+        let mut vault = vault();
+        let unknown = input(&NEW.replace("generic-form", "no-such-recipe"));
+        assert!(matches!(add(&mut vault, unknown), Err(VaultError::InvalidInput(_))));
+        let two_step = add(&mut vault, input(&NEW.replace("generic-form", "two-step-form"))).unwrap();
+        assert_eq!(two_step.recipe_id, "two-step-form");
     }
 
     #[test]

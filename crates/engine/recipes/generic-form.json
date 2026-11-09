@@ -1,0 +1,16 @@
+{
+  "id": "generic-form",
+  "name": "Generic login form",
+  "timeout_ms": 30000,
+  "steps": [
+    { "action": "goto" },
+    { "action": "wait",  "selector": "input[type=password]", "timeout_ms": 15000 },
+    { "action": "fill",  "selector": "input[autocomplete=username], input[type=email], input[type=text]", "value": "{username}" },
+    { "action": "fill",  "selector": "input[type=password]", "value": "{password}" },
+    { "action": "click", "selector": "button[type=submit], input[type=submit]" }
+  ],
+  "success": { "any": [ { "url_not_contains": "/login" } ] },
+  "mfa":     { "any": [ { "selector": "input[autocomplete=one-time-code]" },
+                        { "text": "verification code" } ] },
+  "failure": { "any": [ { "selector": "[role=alert]" } ] }
+}

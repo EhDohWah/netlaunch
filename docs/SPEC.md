@@ -163,6 +163,7 @@ Passwords are encrypted per field with a random data key. That key is protected 
 - **Origin check before every fill.** Before each `fill` (not once per login), the engine checks that the scheme, host and port of the frame holding the field match the saved origin exactly.
   - Origins are normalized with the `url` crate (lowercase host, default ports, IPv6 brackets), so `https://x` and `https://x:443` match.
   - A redirect to any other origin, or a password field inside a frame from another origin, stops the login.
+  - **How (M5):** the driver's selectors never look inside iframes, so any field the engine can fill is in the main frame. The engine compares the main frame's URL, which playwright-rs tracks from the browser's navigation events (the page's own scripts can't fake it), with the origin of the saved login URL. A mismatch stops the login before the password is even read from the vault.
 - **Self-signed exceptions stay per site.** Ignoring certificate errors applies only to the Edge process opened for that site, and only when the site has the self-signed flag on.
 - **No passwords in logs or errors.** Usernames are allowed.
   - The log level is set in code, never from `RUST_LOG`.
@@ -240,13 +241,23 @@ Each login is a small JSON recipe: ordered steps, plus rules that say what "logg
   ],
   "success": { "any": [ { "url_not_contains": "/login" } ] },
   "mfa":     { "any": [ { "selector": "input[autocomplete=one-time-code]" },
-                        { "text": "verification code" } ] }
+                        { "text": "verification code" } ] },
+  "failure": { "any": [ { "selector": "[role=alert]" } ] }
 }
 ```
 
 - **Step actions (v1):** `goto`, `wait` (selector visible), `fill`, `click`, `select` (dropdowns such as the Proxmox realm), `press` (a key, such as Enter).
-- **Placeholders:** only `{username}` and `{password}`. The password is substituted inside the Rust engine at fill time and is never written into the recipe or logs.
-- **Detection rules:** `selector`, `text` (visible text contains), `url_contains`, `url_not_contains`. After submit, the engine waits until either the success or the mfa rule matches, or the timeout fires.
+  - `goto` takes no URL: it always opens the site's saved login URL, so a recipe can't send the browser anywhere else. It must be the first step, and only the first.
+  - Every action uses the **first visible** element that matches. Generic selectors can match several inputs, and hidden decoy fields are skipped.
+- **Placeholders:** only `{username}` and `{password}`, each as the whole value. The password is substituted inside the Rust engine at fill time and is never written into the recipe or logs. Any other `{...}` is rejected when the recipe loads.
+- **Detection rules:** `selector`, `text` (visible text contains, ignoring case), `url_contains`, `url_not_contains`.
+  - After the last step, the engine checks the page every 250 ms until a rule matches or `timeout_ms` runs out. It checks `success` first, then `mfa`, then `failure`: a dashboard may have an alert banner, and a 2FA page may mention an error.
+  - **URL rules only count on the site's own origin.** Otherwise "the URL no longer contains `/login`" would also be true of a browser error page, or of a redirect to another site.
+  - **`failure` (added in M5)** says the site rejected the login. A failure rule that already matched before the last step (a banner that's always on the login page) is ignored afterwards.
+- **Outcomes:** logged in; 2FA hand-over; rejected (`failed`); timed out; origin mismatch; or an error (the page didn't load, the window was closed). Every outcome except a closed window ends with the window brought to the front.
+- **Built-in recipes** are JSON files in `crates/engine/recipes/`, compiled into the app. They're checked when they load, and a site can only be saved with a recipe that exists.
+  - `generic-form`: one page with username and password.
+  - `two-step-form`: username, Next, then the password on a second page.
 - **Per-site recipes to write later** (selectors must be read from each real login page, not guessed): UniFi, Proxmox VE, Proxmox Backup Server, Synology DSM, iDRAC, Huawei switch web UI, Ruckus Unleashed.
 
 ## User interface
@@ -290,7 +301,7 @@ Run it with `cargo run -p netlaunch-mock-site`. Engine tests start it in-process
 | `/redirect-away` | Redirects to the lookalike site (another port, so another origin) before the form | Stops with origin mismatch; lookalike counters stay 0 |
 | `/no-success` | Logs in, but the URL keeps `/login` and there's no `#welcome` | Times out, window handed over |
 
-**Gap for M5:** "Failed, with a clear message" needs a way to recognize a rejected login. Today the recipe has only `success` and `mfa` rules, so add a `failure` rule to recipes (for example the selector `[role=alert]`). Without it, a wrong password looks like a timeout.
+"Failed, with a clear message" needs a way to recognize a rejected login, so M5 added a `failure` rule to recipes (the generic ones use `[role=alert]`). Without it, a wrong password would look like a timeout.
 
 **Automated tests**
 - **Unit tests:**
@@ -299,9 +310,12 @@ Run it with `cargo run -p netlaunch-mock-site`. Engine tests start it in-process
   - tampered ciphertext fails
   - DPAPI wrap/unwrap (`#[cfg(windows)]`)
   - origin parsing and normalization
-- **Integration tests:** each mock page above, run headless with `cargo test`.
+- **Integration tests** (`crates/driver-pw/tests/mock_site.rs`): each mock page above, run headless with `cargo test`.
   - In the `/mfa` test, the test code types `123456` through the driver. The engine itself never does.
-- **Log redaction test:** fill a known password and assert the log doesn't contain it.
+  - They use `NETLAUNCH_TEST_BROWSER` if set, else the installed Edge, else a Chrome or Chromium in the usual Linux places. With no browser they skip, unless `NETLAUNCH_REQUIRE_BROWSER=1`, which CI sets.
+- **Log redaction test:** fill a known password and assert the log doesn't contain it. Two copies:
+  - the engine's own log, with a fake browser, at `trace`;
+  - a real login, with the app's log filter at its most verbose (`trace`, capped at `debug` for playwright-rs). Raising playwright-rs to `trace` makes this test fail, so it does catch the leak.
 - **CI:** a Windows runner, because DPAPI and Edge exist there. Cache the Playwright driver with `PLAYWRIGHT_DRIVER_CACHE_DIR`.
 
 **Manual pilot:** after every mock test passes, one real site: UniFi at 10.100.100.18:8443.
@@ -336,6 +350,13 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
    - **Not in M4:** Open stays disabled until M5, and Test login and the Settings screen are left for later milestones.
 6. **M5 — Login engine.** Recipe runner, origin check, success detection, wired to the Open button.
    - Done when `/simple`, `/two-step`, `/spa`, `/slow`, `/wrong-password` and `/redirect-away` behave as the test table says.
+   - Status: built.
+     - **Engine** (`crates/engine`): recipes, the `BrowserDriver` trait and the runner. 24 tests against a fake browser, including the origin check before every fill and the log redaction test.
+     - **Driver** (`crates/driver-pw`): Edge launch, isolation and close, ported from the spike.
+     - **Mock-site tests:** all six pages above pass in headless Chromium, and so do `/mfa` (hand-over) and `/no-success` (time-out), a self-signed site without the flag, and the redaction test with a real browser. CI runs them on Windows with Edge and on Linux with Chrome.
+     - **App:** Open works. It shows each stage as it happens, then the result, and records each attempt in `login_log`. Managed windows close with the app; released ones are handed over after the login.
+     - Left for the owner: Open each mock scenario by hand from the app on Windows (see `app/README.md`).
+   - **Not in M5:** watching a 2FA hand-over until it succeeds, the session panel (release, close, retry buttons) and the signed-in warning (decision 9) are M6.
 7. **M6 — 2FA handoff and window modes.** MFA detection, pause, managed and released modes.
    - Done when `/mfa` and `/no-success` behave as expected in both modes.
 8. **M7 — Real pilot and hardening.** UniFi recipe, log redaction check, installer build that bundles the Playwright driver.
@@ -350,10 +371,10 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
 | 3 | Window after login | Managed · released · per-site setting | Per-site setting, default managed | M6 |
 | 4 | Master password on top of DPAPI | Yes, unlock on start · no, DPAPI only | **Decided: no** for the prototype; revisit before sharing the app | M3 |
 | 5 | Which browser | Installed Edge · installed Chrome · downloaded Chromium | **Decided: installed Edge** | M1 |
-| 6 | Session cookies | Fresh profile each launch · persistent profile per site | Fresh by default, persistent as a per-site option | M5 |
+| 6 | Session cookies | Fresh profile each launch · persistent profile per site | **Built (M5):** fresh by default, persistent as a per-site option (`%LOCALAPPDATA%\NetLaunch\profiles\<site id>`) | M5 |
 | 7 | Frontend | Vue 3 + Vite · plain HTML/JS | **Decided: Vue 3 + Vite** (JavaScript, no UI library) | M4 |
 | 8 | Encrypt usernames too | Yes · no | **Decided: no** (keeps search and display simple) | M3 |
-| 9 | Edge's implicit sign-in in the login window | Accept it (sync and extensions are off) · set `ImplicitSignInEnabled` = 0 for the user (also affects new profiles in the admin's own Edge) · detect it and warn | **Decided: accept and warn.** Confirmed by the third Windows run (`account_info[0].email`). The session panel warns when the window is signed in; no policy is changed | M5 |
+| 9 | Edge's implicit sign-in in the login window | Accept it (sync and extensions are off) · set `ImplicitSignInEnabled` = 0 for the user (also affects new profiles in the admin's own Edge) · detect it and warn | **Decided: accept and warn.** Confirmed by the third Windows run (`account_info[0].email`). The session panel warns when the window is signed in; no policy is changed. The warning arrives with the session panel in M6 | M6 |
 
 ## Risks
 
@@ -369,6 +390,7 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
 | Driver's Node process handles passwords | One more local process sees them | Child process with no network use; never `trace`-log playwright-rs |
 | A site's login page changes | Recipe stops working | Timeout falls back to handing over the window; recipe is a small JSON fix |
 | Redirect or spoofed page | Password typed into the wrong site | Exact origin check before every fill |
+| The page navigates between the origin check and the fill | Text typed into the new page | The window is milliseconds (check, then one driver call). The check runs before the username too, so a redirect that happens before the form is caught before anything is typed. Playwright can't make the check and the fill one step |
 | Accepting self-signed certificates | A man-in-the-middle on the LAN goes unnoticed | Per-site flag only; later: remember the certificate fingerprint and warn if it changes |
 | Malware running as the admin's Windows user | Can unwrap the DPAPI key | Inherent to any local vault; a master password (decision 4) raises the bar |
 | Persistent profiles keep session cookies on disk | Someone at the unlocked PC can reuse a session | Fresh profile by default |

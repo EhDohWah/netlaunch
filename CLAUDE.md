@@ -14,8 +14,8 @@ NetLaunch is a Windows desktop app (Rust + Tauri) that stores admin console logi
 - **M4 Tauri shell: done** (`app/`). Site list and add/edit screens; checked on the owner's PC. Decision 7: Vue 3 + Vite.
   - Tauri is pinned to 2.11 on both sides: the Rust crate `~2.11` and npm `~2.11.x`. 2.12 needs Rust 1.90. Bump all three together.
   - The owner builds with the GNU toolchain (MinGW). It works, but the linker warns about duplicate manifests. Switch to MSVC before the M7 installer.
-- **Next: M5** (login engine).
-- **Everything else** (engine, driver) is a placeholder crate.
+- **M5 login engine: built** (`crates/engine`, `crates/driver-pw`, Open in the app). Every mock scenario passes in headless Chromium; CI runs them on Windows with Edge. Waiting on the owner's by-hand run in the app (`app/README.md`).
+- **Next: M6** (2FA hand-over until success, session panel, signed-in warning).
 - **CI** (`.github/workflows/ci.yml`) runs tests and `clippy -D warnings` on Windows and Linux for every push.
 
 ## Commands
@@ -23,6 +23,7 @@ NetLaunch is a Windows desktop app (Rust + Tauri) that stores admin console logi
 ```bash
 cargo build                                  # first build downloads the Playwright driver (~130 MB)
 cargo test --workspace --exclude netlaunch-app        # on Linux; the Windows-only app needs WebKitGTK to build here
+cargo test -p netlaunch-driver-pw --test mock_site    # the login engine in a real browser against the mock site
 cargo clippy --workspace --all-targets
 cd app && npm install && cargo tauri dev              # run the app (Windows); see app/README.md
 cargo run -p netlaunch-spike -- help         # M1 spike; see spike/README.md
@@ -41,14 +42,16 @@ cargo run -p netlaunch-mock-site             # mock login site on https://localh
 
   Wine's DPAPI isn't the real one; CI's `windows-latest` job is the real-Windows check.
 
+- **Browser tests** (`crates/driver-pw/tests/mock_site.rs`) use `NETLAUNCH_TEST_BROWSER`, else the installed Edge, else Chrome/Chromium in the usual Linux places. With none they print SKIPPED and pass; `NETLAUNCH_REQUIRE_BROWSER=1` (set in CI) makes that a failure. In a Linux container they add `--no-sandbox`.
+
 - **If the driver download fails** (HTTPS-inspecting proxy; the build script uses its own certificate list), assemble the folder by hand. Follow `spike/README.md` and point `PLAYWRIGHT_DRIVER_PATH` (or `spike --driver-path`) at it.
 
 ## Layout
 
 ```
 crates/vault       SQLite + DPAPI + XChaCha20-Poly1305 (M3)
-crates/engine      recipes, origin check, BrowserDriver trait (M5); never imports playwright-rs
-crates/driver-pw   BrowserDriver on playwright-rs (after M1)
+crates/engine      recipes (JSON in recipes/), origin check, runner, BrowserDriver trait (M5); never imports playwright-rs
+crates/driver-pw   Edge launch + isolation (from the spike), Session = BrowserDriver on playwright-rs (M5)
 crates/mock-site   axum test site with the spec's eight scenarios + a lookalike site (M2)
 spike/             M1 throwaway CLI
 app/               Tauri 2 app: Vue 3 frontend in src/, Rust commands in src-tauri/ (M4)
@@ -56,7 +59,7 @@ docs/SPEC.md       the spec
 ```
 
 - `vault` and `engine` must not depend on Tauri, so `cargo test` covers them without a GUI.
-- **Tauri commands** (`app/src-tauri/src/main.rs`) are thin wrappers. Their logic lives in `sites.rs` as plain functions over a `Vault`, so it's tested without a window.
+- **Tauri commands** (`app/src-tauri/src/main.rs`) are thin wrappers. Their logic lives in `sites.rs` (site list) and `logins.rs` (Open) as plain functions, so it's tested without a window.
 - **Capabilities** (`app/src-tauri/capabilities/default.json`): `core:default` only, so no shell, file system or opener plugins. Keep it that way.
 - **Wine check of the app.** The windows-gnu build links `WebView2Loader.dll` dynamically. Copy it from `~/.cargo/registry/src/*/webview2-com-sys-*/x64/` next to the test `.exe` before running it under Wine. MSVC builds link it statically.
 
@@ -65,7 +68,7 @@ docs/SPEC.md       the spec
 These come from the spec's security section. Treat a change that breaks one as a bug, even if tests pass.
 
 - **No Tauri command ever returns a password.** The frontend may send one when saving; nothing sends one back.
-  - `Vault::reveal_password` is the only way to get a password back. Only the login engine calls it, at fill time.
+  - `Vault::reveal_password` is the only way to get a password back. It's called in one place, the closure `logins.rs` hands to `netlaunch_engine::run`, which calls it when it fills the password field.
   - `Site` (what the UI gets) has no password field. A test checks its JSON contains no password.
   - Never enable the vault's `insecure-test-protector` feature outside tests; it stores the data key unprotected.
 - **Never log filled text.**
@@ -73,9 +76,13 @@ These come from the spec's security section. Treat a change that breaks one as a
   - Cap `playwright_rs` at `debug`: at `trace` it logs the full JSON of every request, including the password being filled. The spike proved this.
   - Keep the test that fills a known password and asserts it's absent from the logs.
 - **Origin check before every fill**, against the frame that holds the field, with origins normalized (default ports, lowercase host).
+  - `BrowserDriver::frame_url_of` must return the URL as the browser recorded it, never one read by JavaScript in the page.
+  - Today selectors never enter iframes, so that's the main frame's URL. If recipes ever get frame support, `frame_url_of` must return the field's own frame.
+  - URL rules (`url_contains`, `url_not_contains`) only count on the site's own origin.
+- **The log filter comes from `netlaunch_engine::log_directives`**, which caps playwright-rs at `debug`.
 - **NetLaunch launches Edge itself, never playwright-rs.**
   - Each site session gets its own profile folder and `--remote-debugging-port=0`. NetLaunch reads the port from `DevToolsActivePort` and attaches with `connect_over_cdp`.
-  - Always add `edge::isolation_args()` and seed the profile's preferences (password saving off). Without them, Edge on a work PC signs the new profile in to the Windows account, syncs it and loads synced extensions next to the password field.
+  - Always add `edge::isolation_args()` (now in `crates/driver-pw/src/edge.rs`) and seed the profile's preferences (password saving off). Without them, Edge on a work PC signs the new profile in to the Windows account, syncs it and loads synced extensions next to the password field.
   - Policies override switches, so check the result: no extra tabs, no running extensions (CDP `Target.getTargets` with `filter: [{}]`; playwright-rs wraps the reply in `result`), no signed-in account.
   - The profile's `extensions.settings` can't tell installed extensions from Edge's own entries. Don't use it as a pass/fail check.
   - Use the browser's default context and its `about:blank` tab (found by URL, not position), not `new_context()`.

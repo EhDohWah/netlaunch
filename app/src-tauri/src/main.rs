@@ -1,11 +1,14 @@
-//! NetLaunch desktop app: the Tauri shell around the vault (milestone M4).
+//! NetLaunch desktop app: the Tauri shell around the vault (M4) and the
+//! login engine (M5).
 //!
 //! The commands below are the frontend's only way into Rust. None of them
-//! returns a password; see `sites.rs` and the rules in CLAUDE.md.
+//! returns a password; see `sites.rs`, `logins.rs` and the rules in
+//! CLAUDE.md.
 
 // In release builds, don't open a console window next to the app.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod logins;
 mod sites;
 
 use std::path::PathBuf;
@@ -13,13 +16,15 @@ use std::sync::Mutex;
 
 use netlaunch_vault::{Site, Vault, VaultError};
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Emitter, Manager, RunEvent, State};
 
 /// The vault, opened once at start-up. If it couldn't be opened, the error
 /// is kept so every command (and the banner in the UI) can report it.
 struct AppState {
     vault: Mutex<Result<Vault, String>>,
     path: Option<PathBuf>,
+    /// Browser windows opened by logins.
+    sessions: logins::Sessions,
 }
 
 impl AppState {
@@ -90,11 +95,67 @@ fn delete_site(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     state.with_vault(|vault| vault.delete_site(id))
 }
 
+#[derive(Serialize)]
+struct RecipeInfo {
+    id: String,
+    name: String,
+}
+
+/// The built-in login recipes, for the recipe dropdown.
+#[tauri::command]
+fn list_recipes() -> Vec<RecipeInfo> {
+    netlaunch_engine::builtin_list().into_iter().map(|(id, name)| RecipeInfo { id, name }).collect()
+}
+
+/// The Open button: launches Edge and logs in. Progress arrives as
+/// `login-progress` events; this resolves with the result.
+///
+/// `async`, so the login (up to a minute) runs without freezing the window.
+#[tauri::command]
+async fn open_site(app: AppHandle, state: State<'_, AppState>, id: i64) -> Result<logins::OpenResult, String> {
+    logins::open_site(&state, id, move |event| {
+        let _ = app.emit("login-progress", event);
+    })
+    .await
+}
+
+/// Logs go to stderr (the `cargo tauri dev` console). The level is set
+/// here, never from `RUST_LOG`, and playwright-rs is capped below `trace`,
+/// where it would log the password being typed.
+fn init_logging() {
+    let filter = tracing_subscriber::EnvFilter::new(netlaunch_engine::log_directives("info"));
+    let _ = tracing_subscriber::fmt().with_env_filter(filter).with_ansi(false).try_init();
+}
+
 fn main() {
+    init_logging();
     let (vault, path) = open_vault();
-    tauri::Builder::default()
-        .manage(AppState { vault: Mutex::new(vault), path })
-        .invoke_handler(tauri::generate_handler![vault_status, list_sites, add_site, update_site, delete_site])
-        .run(tauri::generate_context!())
-        .expect("error while running NetLaunch");
+    let app = tauri::Builder::default()
+        .manage(AppState { vault: Mutex::new(vault), path, sessions: logins::Sessions::default() })
+        .invoke_handler(tauri::generate_handler![
+            vault_status,
+            list_sites,
+            add_site,
+            update_site,
+            delete_site,
+            list_recipes,
+            open_site
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building NetLaunch");
+
+    app.run(|handle, event| {
+        // Managed windows close with the app (spec: "Closing the app
+        // closes the window"). Released windows aren't in the list.
+        if let RunEvent::Exit = event {
+            let sessions = handle.state::<AppState>().sessions.take_all();
+            if !sessions.is_empty() {
+                tauri::async_runtime::block_on(async {
+                    for session in sessions {
+                        session.close().await;
+                    }
+                });
+            }
+        }
+    });
 }

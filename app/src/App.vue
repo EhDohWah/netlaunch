@@ -1,7 +1,7 @@
 <script setup>
 // Top level: loads the vault status and the site list, and switches
 // between the list and the add/edit form.
-import { onMounted, ref } from 'vue';
+import { onMounted, onUnmounted, reactive, ref } from 'vue';
 import * as api from './api.js';
 import SiteList from './components/SiteList.vue';
 import SiteForm from './components/SiteForm.vue';
@@ -12,6 +12,11 @@ const loadError = ref('');
 // null = the list; { site: null } = adding; { site } = editing.
 const form = ref(null);
 const notice = ref('');
+const recipes = ref([]);
+// Login state per site id: { busy, stage } while running, then
+// { outcome, message, warnings }. Kept until the next Open of that site.
+const logins = reactive({});
+let stopListening = null;
 
 async function reload() {
   loadError.value = '';
@@ -29,7 +34,30 @@ onMounted(async () => {
     status.value = { ok: false, path: null, error: String(e) };
   }
   if (status.value.ok) await reload();
+  try {
+    recipes.value = await api.listRecipes();
+  } catch {
+    recipes.value = [{ id: 'generic-form', name: 'Generic login form' }];
+  }
+  stopListening = await api.onLoginProgress(({ site_id, stage }) => {
+    if (logins[site_id]?.busy) logins[site_id].stage = stage;
+  });
 });
+
+onUnmounted(() => stopListening?.());
+
+async function open(site) {
+  logins[site.id] = { busy: true, stage: 'launching' };
+  try {
+    const result = await api.openSite(site.id);
+    logins[site.id] = { busy: false, ...result };
+  } catch (e) {
+    // Refused before a login started (already open, vault error...).
+    logins[site.id] = { busy: false, outcome: 'failed', message: String(e), warnings: [] };
+  }
+  // Updates "last used".
+  await reload();
+}
 
 function flash(text) {
   notice.value = text;
@@ -82,10 +110,19 @@ async function remove(site) {
         v-if="form"
         :site="form.site"
         :groups="[...new Set(sites.map((s) => s.group_name).filter(Boolean))]"
+        :recipes="recipes"
         :save="save"
         @cancel="form = null"
       />
-      <SiteList v-else :sites="sites" @add="form = { site: null }" @edit="(site) => (form = { site })" @delete="remove" />
+      <SiteList
+        v-else
+        :sites="sites"
+        :logins="logins"
+        @add="form = { site: null }"
+        @open="open"
+        @edit="(site) => (form = { site })"
+        @delete="remove"
+      />
     </template>
   </main>
 
