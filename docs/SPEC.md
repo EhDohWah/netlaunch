@@ -244,7 +244,7 @@ Four screens in the Tauri window, built with Vue 3 + Vite (pending confirmation,
 |---|---|---|
 | Site list (home) | Sites grouped by `group_name`, search box, last-used time | Open, Edit, Delete |
 | Add / edit site | Name, group, login URL, username, password (write-only), recipe, self-signed toggle, profile mode, window mode | Save, Test login |
-| Session panel | Live status per open site: Launching, Filling, Waiting for 2FA, Logged in, Failed | Release window, Close window, Retry |
+| Session panel | Live status per open site: Launching, Filling, Waiting for 2FA, Logged in, Failed. A warning when the window is signed in to the Windows account (decision 9) | Release window, Close window, Retry |
 | Settings | Browser path (Edge), data folder, idle lock (if master password is on) | Change, Export site list (no passwords) |
 
 The password field on the edit screen is always empty when opened. Leaving it empty keeps the stored password; typing a new one replaces it.
@@ -253,18 +253,31 @@ The password field on the edit screen is always empty when opened. Leaving it em
 
 All development testing runs against a local mock login site, so no real admin console is touched until the final pilot.
 
-**Mock site** (`crates/mock-site`): an axum server on `https://localhost:8443` with a self-signed certificate.
+**Mock site** (`crates/mock-site`, built in M2): two HTTPS servers on 127.0.0.1 with a self-signed certificate made at start-up.
+- **Main site:** `https://localhost:8443`.
+- **Lookalike site:** `https://localhost:8444`, used by `/redirect-away`.
+
+Run it with `cargo run -p netlaunch-mock-site`. Engine tests start it in-process on free ports with `netlaunch_mock_site::serve`.
+
+- **Fake test account:** `mock-admin` / `Mock-Pa55-2026`, MFA code `123456`. The index page lists the account and every scenario.
+- **URL shape:**
+  - Each scenario's login flow lives under `/<scenario>/login…`, and its dashboard under `/<scenario>/home` with a `#welcome` marker. So the generic recipe's `url_not_contains: "/login"` rule works everywhere.
+  - Rejected logins show `<p id="error" role="alert">`.
+- **The lookalike counts, never records.** It counts input events and submits, never the values. `GET /_mock/status` on the main site returns `{"input_events": n, "submits": n}`, which must stay 0 after `/redirect-away`.
+
 
 | Page | Simulates | Expected app result |
 |---|---|---|
 | `/simple` | One-page username + password form | Logged in |
-| `/two-step` | Username, Next, then password | Logged in (needs its own recipe) |
-| `/spa` | React-style controlled form, like UniFi | Logged in |
+| `/two-step` | Username, Next, then password on a second page | Logged in (needs its own recipe) |
+| `/spa` | React-style controlled form, like UniFi. Ignores `.value` set without input events; switches to `/spa/home` with `pushState`, without a page load | Logged in |
 | `/mfa` | Login, then a 6-digit code page (test code 123456) | Pauses with "Waiting for 2FA"; logs in after the code is typed |
-| `/slow` | Form appears after 5 seconds | Waits, then logs in |
+| `/slow` | Form added by script after 5 seconds (`?delay=ms` or `--slow-delay-ms` to change) | Waits, then logs in |
 | `/wrong-password` | Always rejects | Failed, with a clear message |
-| `/redirect-away` | Redirects to a different port before the form | Stops with origin mismatch; nothing filled |
-| `/no-success` | Logs in but never shows the success marker | Times out, window handed over |
+| `/redirect-away` | Redirects to the lookalike site (another port, so another origin) before the form | Stops with origin mismatch; lookalike counters stay 0 |
+| `/no-success` | Logs in, but the URL keeps `/login` and there's no `#welcome` | Times out, window handed over |
+
+**Gap for M5:** "Failed, with a clear message" needs a way to recognize a rejected login. Today the recipe has only `success` and `mfa` rules, so add a `failure` rule to recipes (for example the selector `[role=alert]`). Without it, a wrong password looks like a timeout.
 
 **Automated tests**
 - **Unit tests:**
@@ -296,6 +309,7 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
      - The released window stays usable after the spike exits.
 3. **M2 — Mock login site.** The axum server with the eight test pages.
    - Done when each page works by hand in Edge.
+   - Status: built. 13 route tests pass, and all eight scenarios pass when driven in headless Chromium. The by-hand check in Edge on Windows is pending.
 4. **M3 — Vault.** SQLite schema, DPAPI-wrapped key, encrypt/decrypt, unit tests.
    - Done when all vault tests pass and the `.db` file shows no plaintext password.
 5. **M4 — Tauri shell.** Site list and add/edit screens wired to the vault.
@@ -319,7 +333,7 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
 | 6 | Session cookies | Fresh profile each launch · persistent profile per site | Fresh by default, persistent as a per-site option | M5 |
 | 7 | Frontend | Vue 3 + Vite · plain HTML/JS | Vue 3 + Vite | M4 |
 | 8 | Encrypt usernames too | Yes · no | No (keeps search and display simple) | M3 |
-| 9 | Edge's implicit sign-in in the login window | Accept it (sync and extensions are off) · set `ImplicitSignInEnabled` = 0 for the user (also affects new profiles in the admin's own Edge) · detect it and warn | Confirmed by the third Windows run (`account_info[0].email`). Recommendation: accept it and show a warning in the session panel when the window is signed in | M5 |
+| 9 | Edge's implicit sign-in in the login window | Accept it (sync and extensions are off) · set `ImplicitSignInEnabled` = 0 for the user (also affects new profiles in the admin's own Edge) · detect it and warn | **Decided: accept and warn.** Confirmed by the third Windows run (`account_info[0].email`). The session panel warns when the window is signed in; no policy is changed | M5 |
 
 ## Risks
 

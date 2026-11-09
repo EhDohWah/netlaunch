@@ -8,8 +8,8 @@ NetLaunch is a Windows desktop app (Rust + Tauri) that stores admin console logi
 
 - **M1 browser spike: done** (Windows 11, Edge 155). Attach, release and managed close all work, and the isolation switches stop sync, extensions and password saving.
 - Edge's implicit sign-in to the Windows account remains (`account_info[0].email`; open decision 9).
-- **Next: M2** (mock login site).
-- **Everything else** (vault, engine, driver, mock site, Tauri app) is a placeholder crate.
+- **M2 mock site: built** (`crates/mock-site`). Route tests pass and all scenarios pass in Chromium; the by-hand check in Edge on Windows is pending. Decision 9: accept and warn.
+- **Everything else** (vault, engine, driver, Tauri app) is a placeholder crate.
 
 ## Commands
 
@@ -18,6 +18,7 @@ cargo build                                  # first build downloads the Playwri
 cargo test
 cargo clippy --workspace --all-targets
 cargo run -p netlaunch-spike -- help         # M1 spike; see spike/README.md
+cargo run -p netlaunch-mock-site             # mock login site on https://localhost:8443; see crates/mock-site/README.md
 ```
 
 - **Windows-only code** (registry, DPAPI, process flags) is behind `#[cfg(windows)]`. From Linux, type-check it with:
@@ -35,7 +36,7 @@ cargo run -p netlaunch-spike -- help         # M1 spike; see spike/README.md
 crates/vault       SQLite + DPAPI + XChaCha20-Poly1305 (M3)
 crates/engine      recipes, origin check, BrowserDriver trait (M5); never imports playwright-rs
 crates/driver-pw   BrowserDriver on playwright-rs (after M1)
-crates/mock-site   axum test site with the spec's test pages (M2)
+crates/mock-site   axum test site with the spec's eight scenarios + a lookalike site (M2)
 spike/             M1 throwaway CLI
 docs/SPEC.md       the spec
 ```
