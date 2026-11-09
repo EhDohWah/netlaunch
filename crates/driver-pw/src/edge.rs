@@ -158,8 +158,8 @@ pub async fn wait_for_debug_port(profile_dir: &Path, child: &mut Child, timeout:
         }
         if Instant::now() >= deadline {
             return Err(format!(
-                "Edge didn't open its debugging port within {} s. Remote debugging may be blocked by \
-                 policy: check edge://policy for RemoteDebuggingAllowed.",
+                "Edge didn't finish starting within {} s. If this keeps happening, remote debugging may \
+                 be blocked by policy: check edge://policy for RemoteDebuggingAllowed.",
                 timeout.as_secs()
             ));
         }

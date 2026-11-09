@@ -22,7 +22,10 @@ use crate::edge;
 /// How long actions (fill, click...) wait for their element.
 const ACTION_TIMEOUT_MS: f64 = 15_000.0;
 const NAVIGATION_TIMEOUT: Duration = Duration::from_secs(30);
-const PORT_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long Edge gets to start and open its debugging port. Its first
+/// start after a reboot (or under an antivirus scan) can take well over
+/// 20 s; CI's first launch on a fresh runner did.
+const PORT_TIMEOUT: Duration = Duration::from_secs(60);
 /// Managed close: how long Edge gets to quit cleanly before it's killed.
 const CLOSE_GRACE: Duration = Duration::from_secs(10);
 
