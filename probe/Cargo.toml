@@ -1,0 +1,17 @@
+[package]
+name = "netlaunch-probe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Opens a real login page in Edge and prints its form (never what's typed), for writing a site recipe."
+
+[[bin]]
+name = "probe"
+path = "src/main.rs"
+
+[dependencies]
+netlaunch-driver-pw = { path = "../crates/driver-pw" }
+netlaunch-engine = { path = "../crates/engine" }
+serde_json.workspace = true
+tokio.workspace = true

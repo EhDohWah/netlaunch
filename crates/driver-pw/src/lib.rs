@@ -11,5 +11,5 @@
 pub mod edge;
 pub mod session;
 
-pub use edge::{find_edge, persistent_profile_dir};
+pub use edge::{bundled_driver_dir, find_edge, persistent_profile_dir, sweep_fresh_profiles, use_bundled_driver};
 pub use session::{LaunchOptions, Profile, Session};

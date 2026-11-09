@@ -15,8 +15,8 @@ NetLaunch is a Windows desktop app (Rust + Tauri) that stores admin console logi
   - Tauri is pinned to 2.11 on both sides: the Rust crate `~2.11` and npm `~2.11.x`. 2.12 needs Rust 1.90. Bump all three together.
   - The owner builds with the GNU toolchain (MinGW). It works, but the linker warns about duplicate manifests. Switch to MSVC before the M7 installer.
 - **M5 login engine: done** (`crates/engine`, `crates/driver-pw`, Open in the app). Every mock scenario passes in Edge in CI and on the owner's PC.
-- **M6 windows: built** (`crates/sessions`, the Open windows panel). 2FA watched until success, managed and released modes, Release/Close/Retry, signed-in warning. Waiting on the owner's by-hand run (`app/README.md`).
-- **Next: M7** (UniFi recipe, installer bundling the Playwright driver, MSVC).
+- **M6 windows: built** (`crates/sessions`, the Open windows panel). 2FA watched until success, managed and released modes, Release/Close/Retry, signed-in warning. The owner confirmed `/mfa`; released mode, `/no-success` and the warning are unconfirmed.
+- **M7 pilot: in progress.** CI builds and checks the installer (MSVC, bundled Playwright driver, `--self-check`, uninstall keeps the vault); log file; `probe` tool. The UniFi recipe waits for the owner's probe output.
 - **CI** (`.github/workflows/ci.yml`) runs tests and `clippy -D warnings` on Windows and Linux for every push.
 
 ## Commands
@@ -30,6 +30,8 @@ cargo clippy --workspace --all-targets
 cd app && npm install && cargo tauri dev              # run the app (Windows); see app/README.md
 cargo run -p netlaunch-spike -- help         # M1 spike; see spike/README.md
 cargo run -p netlaunch-mock-site             # mock login site on https://localhost:8443; see crates/mock-site/README.md
+cargo run -p netlaunch-probe -- <login URL>  # print a real login page's form, to write a recipe; see probe/README.md
+cd app && npm run installer                           # NSIS installer with the bundled driver (Windows, MSVC); CI does this
 ```
 
 - **Windows-only code** (registry, DPAPI, process flags) is behind `#[cfg(windows)]`. From Linux, build and run it with mingw and Wine. Bundled SQLite and `ring` need the mingw C compiler.
@@ -57,6 +59,7 @@ crates/driver-pw   Edge launch + isolation (from the spike), Session = BrowserDr
 crates/sessions    the open windows: runs a login, watches 2FA, release/close, signed-in warning (M6); no Tauri
 crates/mock-site   axum test site with the spec's eight scenarios + a lookalike site (M2)
 spike/             M1 throwaway CLI
+probe/             prints a real login page's form (never typed values), for writing recipes (M7)
 app/               Tauri 2 app: Vue 3 frontend in src/, Rust commands in src-tauri/ (M4)
 docs/SPEC.md       the spec
 ```
@@ -93,7 +96,9 @@ These come from the spec's security section. Treat a change that breaks one as a
   - Use the browser's default context and its `about:blank` tab (found by URL, not position), not `new_context()`.
   - One Edge process per site session, because `--ignore-certificate-errors` is process-wide and must only apply to self-signed sites.
 - **Managed close** sends the CDP `Browser.close` command (a clean quit), then kills the Edge process NetLaunch started if it is still running after 10 s. Releasing means playwright-rs `Browser::close()` (for an attached browser this only disconnects) plus stopping the driver.
-- **Keep `playwright-rs` pinned exactly** in the root `Cargo.toml`. Upgrade on purpose, then re-run the mock-site suite. Its bundled Playwright version (currently 1.64.0) is what the manual driver fallback must match.
+- **Keep `playwright-rs` pinned exactly** in the root `Cargo.toml`. Upgrade on purpose, then re-run the mock-site suite. Its bundled Playwright version (currently 1.64.0) is what the manual driver fallback must match, and so is `PLAYWRIGHT_VERSION` in `app/scripts/stage-driver.mjs`.
+- **The installed app uses its bundled driver.** `main` calls `use_bundled_driver()` first thing, while no other thread exists (it sets an environment variable). Keep it first.
+- **Uninstalling must keep the vault.** The app installs into the vault's folder; CI checks `vault.db` survives an uninstall. Don't add installer steps that delete that folder.
 - **The 2FA code is never read, stored or typed by the engine.** Tests may type the mock site's test code through the driver.
 - **No real credentials in the repo**, including tests and fixtures. The spike's `spike-user` / `Spike-Pa55-7f3c` account is fake.
 

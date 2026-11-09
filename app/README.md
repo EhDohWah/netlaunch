@@ -1,4 +1,4 @@
-# NetLaunch app (M4–M6)
+# NetLaunch app (M4–M7)
 
 The desktop app: a Tauri 2 window with a Vue 3 + Vite frontend, wired to the vault (`crates/vault`) and the login engine (`crates/engine`, `crates/driver-pw`).
 
@@ -13,7 +13,38 @@ The desktop app: a Tauri 2 window with a Vue 3 + Vite frontend, wired to the vau
 - `src/components/SessionPanel.vue` is the "Open windows" panel.
   - `capabilities/default.json` grants only Tauri's core defaults.
 
-## Run it on Windows
+## Install it (M7)
+
+CI builds the installer on every push to `main`, with the MSVC toolchain.
+
+1. Open the repository's **Actions** tab, and click the latest green **CI** run.
+2. Under **Artifacts**, download **netlaunch-installer**, and unzip it.
+3. Run `NetLaunch_0.1.0_x64-setup.exe`. It installs for your Windows user only (no admin rights) into `%LOCALAPPDATA%\NetLaunch`, next to your vault. Your sites stay, and uninstalling keeps `vault.db`; CI checks both.
+   - Windows SmartScreen may warn, because the installer isn't signed. Choose "More info", then "Run anyway".
+4. Start NetLaunch from the Start menu.
+
+The installer bundles the Playwright driver (Node + playwright-core, about 130 MB unpacked) in `playwright-driver\`, and the app uses that copy. So the installed app needs nothing else on the PC except Edge.
+
+To build the installer yourself instead, you need the MSVC toolchain (see below), then:
+
+```powershell
+cd app
+npm run installer
+```
+
+It ends up in `target\release\bundle\nsis\`.
+
+**Check the installed app can drive Edge** without opening its window:
+
+```powershell
+& "$env:LOCALAPPDATA\NetLaunch\netlaunch.exe" --self-check "$env:TEMP\self-check.txt"; Get-Content "$env:TEMP\self-check.txt"
+```
+
+It should end with `OK`, and its first line should name the bundled `playwright-driver` folder.
+
+**Log file:** `%LOCALAPPDATA%\NetLaunch\logs\netlaunch.log`. It records what NetLaunch did (steps, selectors, outcomes), never what it typed.
+
+## Run it on Windows (development)
 
 Needs Rust, Node.js 20+, and the Tauri CLI (`cargo install tauri-cli --version "^2" --locked`).
 
@@ -91,6 +122,26 @@ Keep the mock site running, and use the sites from the M5 check.
 5. **Closing by hand.** Close a managed Edge window yourself: its row disappears within a second or two.
 6. **Signed-in warning.** On your PC, Edge signs new windows in to your Windows account. Within about a minute of opening a site, its row should show the warning "Edge signed this window in to your Windows account…". Tell me if it never appears.
 7. **Exit.** Close NetLaunch with managed windows open: they close too.
+
+## Check by hand (M7 "done when"): UniFi
+
+1. **Probe the login page** (from the repo folder, with your UniFi address):
+
+   ```powershell
+   cargo run -p netlaunch-probe -- https://10.100.100.18:8443/ --self-signed
+   ```
+
+   Log in by hand in the Edge window it opens. Press Enter in the terminal on each page (2FA, dashboard), then `q`. Send the output between the `=====` lines; I'll write the UniFi recipe from it. See `probe/README.md`.
+2. Meanwhile, try UniFi with the **Generic** recipe in the installed app. It may already work.
+3. **Log redaction check.** After a UniFi login, search the log for your password. Nothing should be found:
+
+   ```powershell
+   $p = Read-Host "UniFi password"
+   Select-String -Path "$env:LOCALAPPDATA\NetLaunch\logs\netlaunch.log" -Pattern $p -SimpleMatch
+   Remove-Variable p
+   ```
+
+   No output means the password isn't in the log.
 
 **Every attempt is recorded** in the vault's `login_log` table with its outcome and message, never the password.
 

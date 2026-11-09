@@ -157,16 +157,90 @@ async fn close_window(state: State<'_, AppState>, id: i64) -> Result<(), String>
     state.sessions.close(id).await
 }
 
-/// Logs go to stderr (the `cargo tauri dev` console). The level is set
-/// here, never from `RUST_LOG`, and playwright-rs is capped below `trace`,
-/// where it would log the password being typed.
-fn init_logging() {
-    let filter = tracing_subscriber::EnvFilter::new(netlaunch_engine::log_directives("info"));
-    let _ = tracing_subscriber::fmt().with_env_filter(filter).with_ansi(false).try_init();
+/// The log file: `%LOCALAPPDATA%\NetLaunch\logs\netlaunch.log`. When it
+/// passes 5 MB it's renamed to `netlaunch.old.log` (replacing the older
+/// one) at the next start.
+fn log_file() -> Option<std::fs::File> {
+    let dir = PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("NetLaunch").join("logs");
+    std::fs::create_dir_all(&dir).ok()?;
+    let path = dir.join("netlaunch.log");
+    if std::fs::metadata(&path).is_ok_and(|m| m.len() > 5 * 1024 * 1024) {
+        let _ = std::fs::rename(&path, dir.join("netlaunch.old.log"));
+    }
+    std::fs::OpenOptions::new().create(true).append(true).open(path).ok()
 }
 
-fn main() {
+/// Logs go to the log file and to stderr (the `cargo tauri dev` console).
+/// The level is set here, never from `RUST_LOG`, and playwright-rs is
+/// capped below `trace`, where it would log the password being typed.
+fn init_logging() {
+    use tracing_subscriber::fmt::writer::MakeWriterExt;
+
+    let filter = tracing_subscriber::EnvFilter::new(netlaunch_engine::log_directives("info"));
+    let builder = tracing_subscriber::fmt().with_env_filter(filter).with_ansi(false);
+    let _ = match log_file() {
+        Some(file) => builder.with_writer(std::io::stderr.and(Mutex::new(file))).try_init(),
+        None => builder.try_init(),
+    };
+}
+
+/// `netlaunch --self-check <report file>`: checks the installed app can
+/// drive Edge, without opening its window. Launches Edge headless through
+/// the Playwright driver (the installer's copy when present), attaches,
+/// closes it, and writes a short report. CI runs it on the installed app.
+fn self_check(report: &std::path::Path, bundled: Option<&std::path::Path>) -> std::process::ExitCode {
+    let mut lines = vec![format!(
+        "bundled driver: {}",
+        bundled.map(|d| d.display().to_string()).unwrap_or_else(|| "none".into())
+    )];
+    let result = tauri::async_runtime::block_on(async {
+        let browser = netlaunch_driver_pw::find_edge().ok_or("Edge not found")?;
+        lines.push(format!("edge: {}", browser.display()));
+        let session = netlaunch_driver_pw::Session::launch(netlaunch_driver_pw::LaunchOptions {
+            browser,
+            profile: netlaunch_driver_pw::Profile::Fresh,
+            accept_self_signed: false,
+            headless: true,
+            extra_args: Vec::new(),
+        })
+        .await?;
+        let clean = session.close().await;
+        Ok::<bool, String>(clean)
+    });
+    let ok = match result {
+        Ok(clean) => {
+            lines.push(format!("launched and attached; clean quit: {clean}"));
+            lines.push("OK".into());
+            true
+        }
+        Err(e) => {
+            lines.push(format!("FAILED: {e}"));
+            false
+        }
+    };
+    let _ = std::fs::write(report, lines.join("\n") + "\n");
+    if ok { std::process::ExitCode::SUCCESS } else { std::process::ExitCode::FAILURE }
+}
+
+fn main() -> std::process::ExitCode {
+    // Use the Playwright driver the installer put next to the exe. First
+    // thing, while no other thread exists.
+    // SAFETY: nothing else is running yet.
+    let bundled = unsafe { netlaunch_driver_pw::use_bundled_driver() };
+
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--self-check") {
+        let report = args.get(i + 1).map(PathBuf::from).unwrap_or_else(|| std::env::temp_dir().join("netlaunch-self-check.txt"));
+        return self_check(&report, bundled.as_deref());
+    }
+
     init_logging();
+    tracing::info!(bundled_driver = ?bundled, "NetLaunch starting");
+    // Fresh profiles of windows released earlier, and since closed.
+    let swept = netlaunch_driver_pw::sweep_fresh_profiles(std::time::Duration::from_secs(10 * 60));
+    if swept > 0 {
+        tracing::info!(swept, "deleted leftover fresh profile folders");
+    }
     let (vault, path) = open_vault();
     let vault = SharedVault(Arc::new(Mutex::new(vault)));
 
@@ -201,4 +275,5 @@ fn main() {
             tauri::async_runtime::block_on(sessions.close_all());
         }
     });
+    std::process::ExitCode::SUCCESS
 }

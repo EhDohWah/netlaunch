@@ -8,3 +8,4 @@ dist/
 # Tauri generates these JSON schemas on every build.
 app/src-tauri/gen/
 .playwright-driver/
+app/src-tauri/playwright-driver/

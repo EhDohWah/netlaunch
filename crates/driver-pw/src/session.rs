@@ -152,6 +152,48 @@ impl Session {
         &self.profile_dir
     }
 
+    /// A description of the page's form, for writing a recipe (the
+    /// `netlaunch-probe` tool): the visible fields, buttons, headings and
+    /// frames, with their attributes, and how many visible elements each of
+    /// `selectors` matches.
+    ///
+    /// **Never reads what's typed in a field**: only attributes such as
+    /// `type`, `name` and `autocomplete`, and the labels of buttons.
+    pub async fn snapshot(&self, selectors: &[String]) -> Result<serde_json::Value, String> {
+        const SCRIPT: &str = r#"(selectors) => {
+          const visible = (el) => {
+            const r = el.getBoundingClientRect();
+            const s = getComputedStyle(el);
+            return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
+          };
+          const attrs = (el, names) => Object.fromEntries(names
+            .map((n) => [n, el.getAttribute(n)])
+            .filter(([, v]) => v !== null && v !== '')
+            .map(([n, v]) => [n, v.slice(0, 80)]));
+          const text = (el) => (el.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 60);
+          const all = (sel) => [...document.querySelectorAll(sel)].filter(visible);
+          return {
+            url: location.origin + location.pathname,
+            title: document.title,
+            fields: all('input, select, textarea').map((el) => ({ tag: el.tagName.toLowerCase(),
+              ...attrs(el, ['type', 'id', 'name', 'autocomplete', 'placeholder', 'aria-label', 'inputmode', 'maxlength', 'class']) })),
+            buttons: all('button, input[type=submit], input[type=button], [role=button]').map((el) => ({ tag: el.tagName.toLowerCase(),
+              ...attrs(el, ['type', 'id', 'name', 'aria-label', 'class']),
+              // A button's label: its text, or the value attribute of an
+              // <input type=submit> (the label, not something typed).
+              label: el.tagName === 'INPUT' ? (el.getAttribute('value') || '') : text(el) })),
+            headings: all('h1, h2, h3, [role=heading], [role=alert], [id*=welcome i]').map((el) => ({ tag: el.tagName.toLowerCase(),
+              ...attrs(el, ['id', 'role', 'class']), text: text(el) })),
+            frames: [...document.querySelectorAll('iframe')].map((f) => { try { return new URL(f.src, location.href).origin; } catch { return f.getAttribute('src'); } }),
+            matches: Object.fromEntries(selectors.map((sel) => { try { return [sel, all(sel).length]; } catch { return [sel, 'invalid selector']; } })),
+          };
+        }"#;
+        self.page
+            .evaluate::<Vec<String>, serde_json::Value>(SCRIPT, Some(&selectors.to_vec()))
+            .await
+            .map_err(|e| trim_stack(&e.to_string()))
+    }
+
     /// The Edge process id (tests use it to check a released window
     /// survives, and to clean it up afterwards).
     pub fn pid(&self) -> Option<u32> {

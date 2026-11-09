@@ -237,6 +237,84 @@ fn collect_email_paths(value: &serde_json::Value, path: String, out: &mut Vec<St
     }
 }
 
+/// The folder the installer puts the Playwright driver in, next to the
+/// app's exe: `<exe folder>\playwright-driver` (holding `node.exe` and
+/// `package\cli.js`). `None` when it isn't there, as in development, where
+/// playwright-rs uses the driver its build script downloaded.
+pub fn bundled_driver_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?.join("playwright-driver");
+    let node = if cfg!(windows) { "node.exe" } else { "node" };
+    (dir.join(node).is_file() && dir.join("package").join("cli.js").is_file()).then_some(dir)
+}
+
+/// Points playwright-rs at the installer's bundled driver, unless
+/// `PLAYWRIGHT_DRIVER_PATH` is already set. Returns the folder used.
+///
+/// # Safety
+///
+/// Changes an environment variable, so call it first thing in `main`,
+/// before any other thread exists (Rust 2024 marks `set_var` unsafe for
+/// that reason).
+pub unsafe fn use_bundled_driver() -> Option<PathBuf> {
+    if std::env::var_os("PLAYWRIGHT_DRIVER_PATH").is_some() {
+        return None;
+    }
+    let dir = bundled_driver_dir()?;
+    // SAFETY: the caller promises no other thread is running.
+    unsafe { std::env::set_var("PLAYWRIGHT_DRIVER_PATH", &dir) };
+    Some(dir)
+}
+
+/// Deletes fresh-profile folders left behind by earlier runs: windows
+/// that were released (Edge kept running, so the folder couldn't be
+/// deleted then) and since closed, or NetLaunch exiting abruptly.
+/// Returns how many it deleted.
+///
+/// A folder still in use is skipped: Edge holds its `lockfile` open
+/// without sharing, so deleting that file fails. Folders younger than
+/// `min_age` are skipped too, in case another NetLaunch is starting a
+/// window right now. Windows only; elsewhere it does nothing.
+pub fn sweep_fresh_profiles(min_age: Duration) -> usize {
+    #[cfg(windows)]
+    {
+        sweep_fresh_profiles_in(&std::env::temp_dir().join("NetLaunch"), min_age)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = min_age;
+        0
+    }
+}
+
+#[cfg(windows)]
+fn sweep_fresh_profiles_in(root: &Path, min_age: Duration) -> usize {
+    let Ok(entries) = fs::read_dir(root) else { return 0 };
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let is_profile = entry.file_name().to_string_lossy().starts_with("profile-") && path.is_dir();
+        let old_enough = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age >= min_age);
+        if !is_profile || !old_enough {
+            continue;
+        }
+        let lock = path.join("lockfile");
+        // Locked: Edge is still using this profile (a released window).
+        if lock.exists() && fs::remove_file(&lock).is_err() {
+            continue;
+        }
+        if remove_profile(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    removed
+}
+
 /// A new, unique folder for a fresh profile under the system temp folder.
 /// It's deleted when the window is closed from NetLaunch.
 pub fn fresh_profile_dir() -> PathBuf {
@@ -298,6 +376,38 @@ mod tests {
         fs::write(dir.join("Default").join("Preferences"), "{ half written").unwrap();
         assert!(signed_in_account_paths(&dir).is_empty());
         remove_profile(&dir).unwrap();
+    }
+
+    /// Edge on Windows holds `lockfile` open without sharing while the
+    /// profile is in use. The sweep must leave such a folder alone.
+    #[cfg(windows)]
+    #[test]
+    fn sweep_skips_profiles_in_use_and_young_ones() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let root = std::env::temp_dir().join(format!("netlaunch-sweep-test-{}", std::process::id()));
+        let make = |name: &str| {
+            let dir = root.join(name);
+            fs::create_dir_all(dir.join("Default")).unwrap();
+            fs::write(dir.join("lockfile"), "").unwrap();
+            dir
+        };
+        let closed = make("profile-closed");
+        let in_use = make("profile-in-use");
+        let not_ours = make("something-else");
+        let held = fs::OpenOptions::new().read(true).write(true).share_mode(0).open(in_use.join("lockfile")).unwrap();
+
+        // Everything is brand new: nothing is old enough yet.
+        assert_eq!(sweep_fresh_profiles_in(&root, Duration::from_secs(3600)), 0);
+
+        assert_eq!(sweep_fresh_profiles_in(&root, Duration::ZERO), 1);
+        assert!(!closed.exists(), "a closed profile is deleted");
+        assert!(in_use.join("Default").exists(), "a profile in use is left alone");
+        assert!(not_ours.exists(), "only profile-* folders are touched");
+
+        drop(held);
+        assert_eq!(sweep_fresh_profiles_in(&root, Duration::ZERO), 1);
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

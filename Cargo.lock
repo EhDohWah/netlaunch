@@ -2290,6 +2290,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "netlaunch-probe"
+version = "0.1.0"
+dependencies = [
+ "netlaunch-driver-pw",
+ "netlaunch-engine",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "netlaunch-sessions"
 version = "0.1.0"
 dependencies = [

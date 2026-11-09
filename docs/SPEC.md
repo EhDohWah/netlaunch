@@ -370,8 +370,18 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
      - **Signed-in warning** (decision 9): for two minutes after launch the watcher reads the profile's preferences for an account address (`account_info[…].email`, only the path is kept) and adds a warning. Edge writes the file a few seconds after signing in.
      - **Tests** (`crates/sessions/tests/windows.rs`, real browser): `/mfa` and `/no-success` in both modes, a released window's Edge still running afterwards, an unfinished 2FA handed over, a window closed by hand, a site opened twice, and closing everything on exit.
      - Left for the owner: the by-hand check in `app/README.md`. The signed-in warning can only be seen on a PC where Edge signs in (the owner's).
+     - The owner confirmed `/mfa` in the app (Nov 9, 2026). Released mode, `/no-success` and the signed-in warning aren't confirmed yet.
 8. **M7 — Real pilot and hardening.** UniFi recipe, log redaction check, installer build that bundles the Playwright driver.
    - Done when one-click login to UniFi works on the admin's PC from the installed app.
+   - Status: in progress.
+     - **Installer:** CI builds the NSIS installer on `windows-latest` with the MSVC toolchain and uploads it as the `netlaunch-installer` artifact. It installs per user into `%LOCALAPPDATA%\NetLaunch`, next to the vault.
+       - The Playwright driver is bundled in `playwright-driver\`. At start-up the app sets `PLAYWRIGHT_DRIVER_PATH` to it, before any other thread exists.
+       - `app/scripts/stage-driver.mjs` copies the driver in before the build. `src-tauri/tauri.bundle.conf.json` adds the resource only for installer builds, so development builds don't copy 130 MB.
+     - **CI checks the installed app:** it installs silently and runs `netlaunch --self-check`, with the build's own driver hidden; that launches headless Edge through the bundled driver and closes it. It then uninstalls and checks `vault.db` survived. (Tauri's uninstaller deletes only the files it installed. Its "delete app data" option targets `com.netlaunch.desktop`, not this folder.)
+     - **Log file:** `%LOCALAPPDATA%\NetLaunch\logs\netlaunch.log`, rotated at 5 MB, same filter as before. The redaction check runs on it (`app/README.md`).
+     - **Leftover fresh profiles** (released windows since closed, abrupt exits) are deleted at start-up. A folder whose `lockfile` Edge still holds is skipped, and so is any folder younger than 10 minutes.
+     - **Edge start-up timeout** raised from 20 s to 60 s: CI's first launches on a fresh runner took longer.
+     - **UniFi recipe:** waiting for the owner's `probe` output from the real login page (`probe/README.md`). The generic recipe may already work.
 
 ## Open decisions
 

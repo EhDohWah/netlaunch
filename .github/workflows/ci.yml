@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Lets the owner build an installer from the Actions tab on demand.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -52,6 +54,79 @@ jobs:
         run: cargo test ${{ matrix.cargo_args }}
       - name: Clippy
         run: cargo clippy ${{ matrix.cargo_args }} --all-targets -- -D warnings
+
+  # Builds the Windows installer with the MSVC toolchain (what Tauri
+  # supports), checks the installed app, and uploads the installer as the
+  # "netlaunch-installer" artifact of the run.
+  installer:
+    name: installer (windows)
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: windows-latest
+    env:
+      PLAYWRIGHT_DRIVER_CACHE_DIR: ${{ github.workspace }}/.playwright-driver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: installer
+      - name: Cache the Playwright driver
+        uses: actions/cache@v4
+        with:
+          path: .playwright-driver
+          key: playwright-driver-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: playwright-driver-${{ runner.os }}-
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      # playwright-rs's build script assembles the driver the installer
+      # bundles.
+      - name: Assemble the Playwright driver
+        run: cargo build -p netlaunch-driver-pw
+      - name: Install npm packages
+        working-directory: app
+        run: npm ci
+      - name: Build the installer
+        working-directory: app
+        run: npm run installer
+      - name: Install, self-check and uninstall
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          Write-Host "Installer: $($setup.Name), $([math]::Round($setup.Length / 1MB)) MB"
+          Start-Process $setup.FullName -ArgumentList '/S' -Wait
+          $dir = Join-Path $env:LOCALAPPDATA 'NetLaunch'
+          foreach ($file in 'netlaunch.exe', 'playwright-driver/node.exe', 'playwright-driver/package/cli.js') {
+            if (-not (Test-Path (Join-Path $dir $file))) { throw "missing after install: $file" }
+          }
+
+          # Hide the driver the build used, so only the bundled copy can work.
+          $cache = $env:PLAYWRIGHT_DRIVER_CACHE_DIR
+          Move-Item $cache "$cache-hidden"
+          $report = Join-Path $env:RUNNER_TEMP 'self-check.txt'
+          $app = Start-Process (Join-Path $dir 'netlaunch.exe') -ArgumentList '--self-check', $report -PassThru
+          if (-not $app.WaitForExit(180000)) { $app.Kill(); throw 'self-check hung' }
+          Move-Item "$cache-hidden" $cache
+          Get-Content $report
+          if ($app.ExitCode -ne 0) { throw "self-check failed (exit $($app.ExitCode))" }
+          if (-not (Select-String $report -Pattern 'bundled driver: .*playwright-driver' -Quiet)) {
+            throw 'the installed app did not use its bundled driver'
+          }
+
+          # The vault lives in the same folder: uninstalling must keep it.
+          Set-Content (Join-Path $dir 'vault.db') 'stand-in for the vault'
+          Start-Process (Join-Path $dir 'uninstall.exe') -ArgumentList '/S', "_?=$dir" -Wait
+          if (Test-Path (Join-Path $dir 'netlaunch.exe')) { throw 'uninstall left netlaunch.exe behind' }
+          if (-not (Test-Path (Join-Path $dir 'vault.db'))) { throw 'uninstall deleted the vault' }
+          Write-Host 'Installed, self-checked and uninstalled; the vault was kept.'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: netlaunch-installer
+          path: target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
 
   ui:
     name: ui (vite build)
