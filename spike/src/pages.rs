@@ -46,11 +46,10 @@ fn handle(mut stream: TcpStream) -> std::io::Result<()> {
         if reader.read_line(&mut line)? == 0 || line == "\r\n" || line == "\n" {
             break;
         }
-        if let Some((name, value)) = line.split_once(':') {
-            if name.trim().eq_ignore_ascii_case("content-length") {
+        if let Some((name, value)) = line.split_once(':')
+            && name.trim().eq_ignore_ascii_case("content-length") {
                 content_length = value.trim().parse().unwrap_or(0);
             }
-        }
     }
     let mut body = vec![0u8; content_length.min(64 * 1024)];
     reader.read_exact(&mut body)?;

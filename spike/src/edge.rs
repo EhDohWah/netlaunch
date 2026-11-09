@@ -20,14 +20,13 @@ pub fn find_edge() -> Option<PathBuf> {
     {
         const APP_PATHS: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe";
         for root in [windows_registry::LOCAL_MACHINE, windows_registry::CURRENT_USER] {
-            if let Ok(key) = root.open(APP_PATHS) {
-                if let Ok(value) = key.get_string("") {
+            if let Ok(key) = root.open(APP_PATHS)
+                && let Ok(value) = key.get_string("") {
                     let path = PathBuf::from(value.trim_matches('"'));
                     if path.is_file() {
                         return Some(path);
                     }
                 }
-            }
         }
 
         let suffix = Path::new("Microsoft").join("Edge").join("Application").join("msedge.exe");
@@ -148,13 +147,11 @@ pub fn wait_for_debug_port(profile_dir: &Path, timeout: Duration) -> Result<u16,
     let file = profile_dir.join("DevToolsActivePort");
     let deadline = Instant::now() + timeout;
     loop {
-        if let Ok(text) = fs::read_to_string(&file) {
-            if let Some(port) = text.lines().next().and_then(|l| l.trim().parse::<u16>().ok()) {
-                if port != 0 {
+        if let Ok(text) = fs::read_to_string(&file)
+            && let Some(port) = text.lines().next().and_then(|l| l.trim().parse::<u16>().ok())
+                && port != 0 {
                     return Ok(port);
                 }
-            }
-        }
         if Instant::now() >= deadline {
             return Err(format!(
                 "{} did not appear within {}s. Is remote debugging blocked by policy? Check edge://policy for RemoteDebuggingAllowed.",
