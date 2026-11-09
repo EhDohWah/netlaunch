@@ -14,7 +14,10 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# Keep on the same minor version as @tauri-apps/api and @tauri-apps/cli
+# in ../package.json, or `cargo tauri dev` reports a version mismatch.
+# 2.12 needs Rust 1.90; upgrade all three together.
+tauri = { version = "~2.11", features = [] }
 serde = { version = "1", features = ["derive"] }
 # `serde` lets a SecretString be *deserialized* from the frontend's input.
 # It can't be serialized, so a command can't return one by mistake.

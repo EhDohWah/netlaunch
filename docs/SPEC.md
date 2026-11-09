@@ -332,7 +332,7 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
      - 7 command tests pass, including one that serializes every command's output and checks it holds no password.
      - The UI flows pass in Chromium against a stand-in backend.
      - The app cross-compiles for Windows.
-     - The restart check by hand on Windows (`app/README.md`) is pending.
+     - **Done** (Nov 9, 2026): the app ran on the owner's PC and the site list survived a restart.
    - **Not in M4:** Open stays disabled until M5, and Test login and the Settings screen are left for later milestones.
 6. **M5 — Login engine.** Recipe runner, origin check, success detection, wired to the Open button.
    - Done when `/simple`, `/two-step`, `/spa`, `/slow`, `/wrong-password` and `/redirect-away` behave as the test table says.
@@ -364,6 +364,7 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
 | Edge auto-updates; the bundled Playwright server is pinned | A newer Edge may stop working with the old driver | Upgrade the crate every few months; re-run the mock suite after Edge updates |
 | Company policy blocks remote debugging | The app can't log in at all | Checked in M0; manual login still works |
 | Edge signs the new profile in to the Windows account, syncs it, installs synced extensions | Extensions read the page while the password is typed; console URLs sync to the account; Edge may save the password | Isolation switches + seeded preferences; the app checks for extra tabs and profile state, and warns when a machine policy defeats isolation |
+| Building with the Windows GNU toolchain (MinGW) instead of MSVC | The linker reports "multiple non-default manifests" and keeps only one of the app's Windows manifests; `WebView2Loader.dll` must ship next to the exe | Works for development; switch to the MSVC toolchain before the M7 installer, which is what Tauri supports |
 | HTTPS-inspecting proxy breaks the driver download at build time | `cargo build` can't fetch the driver | Manual driver folder + `PLAYWRIGHT_DRIVER_PATH` (documented in `spike/README.md`) |
 | Driver's Node process handles passwords | One more local process sees them | Child process with no network use; never `trace`-log playwright-rs |
 | A site's login page changes | Recipe stops working | Timeout falls back to handing over the window; recipe is a small JSON fix |

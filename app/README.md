@@ -21,6 +21,12 @@ npm install
 cargo tauri dev
 ```
 
+**Keep the Tauri versions in step.** The Rust crate `tauri` and the npm packages `@tauri-apps/api` and `@tauri-apps/cli` must share a minor version. All three are pinned to 2.11, because 2.12 needs Rust 1.90. Upgrade them together, or `cargo tauri dev` prints a version-mismatch error.
+
+**Use the MSVC toolchain on Windows.** With the GNU toolchain (MinGW), the build warns `.rsrc merge failure: multiple non-default manifests`. The app still runs, but MSVC is what Tauri supports, and the M7 installer should be built with it. To switch:
+1. Install Visual Studio Build Tools with "Desktop development with C++".
+2. Run `rustup default stable-x86_64-pc-windows-msvc`.
+
 The first run compiles Tauri and takes a few minutes. The window opens with the site list. The vault file is created at `%LOCALAPPDATA%\NetLaunch\vault.db`, and its path is shown at the bottom of the window.
 
 ## Check by hand (M4 "done when")

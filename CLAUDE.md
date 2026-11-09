@@ -11,7 +11,10 @@ NetLaunch is a Windows desktop app (Rust + Tauri) that stores admin console logi
 - **M2 mock site: done** (`crates/mock-site`). Route tests pass, all scenarios pass in Chromium, and you checked them by hand in Edge. Decision 9: accept and warn.
 - **M3 vault: built** (`crates/vault`). Tests pass on Linux and on Windows under Wine; CI runs them on real Windows. Decisions 4 and 8: no master password, usernames not encrypted.
 - **M3 vault: done.** CI passes, and all 31 tests pass on the owner's PC with real DPAPI.
-- **M4 Tauri shell: built** (`app/`). Site list and add/edit screens. Command tests and UI checks pass; the restart check by hand on Windows is pending. Decision 7: Vue 3 + Vite.
+- **M4 Tauri shell: done** (`app/`). Site list and add/edit screens; checked on the owner's PC. Decision 7: Vue 3 + Vite.
+  - Tauri is pinned to 2.11 on both sides: the Rust crate `~2.11` and npm `~2.11.x`. 2.12 needs Rust 1.90. Bump all three together.
+  - The owner builds with the GNU toolchain (MinGW). It works, but the linker warns about duplicate manifests. Switch to MSVC before the M7 installer.
+- **Next: M5** (login engine).
 - **Everything else** (engine, driver) is a placeholder crate.
 - **CI** (`.github/workflows/ci.yml`) runs tests and `clippy -D warnings` on Windows and Linux for every push.
 
