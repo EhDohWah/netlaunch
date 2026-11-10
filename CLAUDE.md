@@ -60,6 +60,7 @@ crates/sessions    the open windows: runs a login, watches 2FA, release/close, s
 crates/mock-site   axum test site with the spec's eight scenarios + a lookalike site (M2)
 spike/             M1 throwaway CLI
 probe/             prints a real login page's form (never typed values), for writing recipes (M7)
+vendor/playwright-rs  playwright-rs 0.20.1 with the no-console-window patch; not a workspace member
 app/               Tauri 2 app: Vue 3 frontend in src/, Rust commands in src-tauri/ (M4)
 docs/SPEC.md       the spec
 ```
@@ -96,6 +97,7 @@ These come from the spec's security section. Treat a change that breaks one as a
   - Use the browser's default context and its `about:blank` tab (found by URL, not position), not `new_context()`.
   - One Edge process per site session, because `--ignore-certificate-errors` is process-wide and must only apply to self-signed sites.
 - **Managed close** sends the CDP `Browser.close` command (a clean quit), then kills the Edge process NetLaunch started if it is still running after 10 s. Releasing means playwright-rs `Browser::close()` (for an attached browser this only disconnects) plus stopping the driver.
+- **playwright-rs is patched** (`vendor/playwright-rs`, through `[patch.crates-io]`): on Windows it starts `node.exe` with `CREATE_NO_WINDOW`, or the installed app opens a terminal next to every login window. Upgrading means re-applying that patch; see `vendor/playwright-rs/NETLAUNCH.md`.
 - **Keep `playwright-rs` pinned exactly** in the root `Cargo.toml`. Upgrade on purpose, then re-run the mock-site suite. Its bundled Playwright version (currently 1.64.0) is what the manual driver fallback must match, and so is `PLAYWRIGHT_VERSION` in `app/scripts/stage-driver.mjs`.
 - **The installed app uses its bundled driver.** `main` calls `use_bundled_driver()` first thing, while no other thread exists (it sets an environment variable). Keep it first.
 - **Uninstalling must keep the vault.** The app installs into the vault's folder; CI checks `vault.db` survives an uninstall. Don't add installer steps that delete that folder.

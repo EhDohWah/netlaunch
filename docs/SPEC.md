@@ -383,6 +383,8 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
      - **Edge start-up timeout** raised from 20 s to 60 s: CI's first launches on a fresh runner took longer.
      - **First green installer run** (Nov 9, 2026, CI run 10): a 28 MB installer. The self-check used the bundled driver with the build's own copy hidden, and Edge quit cleanly. Uninstalling kept `vault.db`.
      - **The closed-window message names its cause** after one Windows run reported `/redirect-away`'s window closed (it had passed five times). Liveness now falls back to the DevTools port when the process NetLaunch started has exited, since Edge can carry on in another process.
+     - **No terminal window** (Nov 10, 2026): the owner's first installed run opened a terminal in front of the login window. It was the Playwright driver (`node.exe`): a console program started from a windowed app gets its own console. playwright-rs has no way to pass Windows creation flags, so `vendor/playwright-rs` is 0.20.1 with `CREATE_NO_WINDOW` added (as Playwright's own Python and .NET clients do), used through `[patch.crates-io]`.
+     - **Edge's "unsupported command-line flag: --ignore-certificate-errors" bar** stays, for self-signed sites only. The CDP alternative (`Security.setIgnoreCertificateErrors`) lasts only while NetLaunch is connected, so a released window would start rejecting the site's certificate. The bar is also an honest warning.
      - **UniFi recipe:** waiting for the owner's `probe` output from the real login page (`probe/README.md`). The generic recipe may already work.
 
 ## Open decisions

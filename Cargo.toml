@@ -11,6 +11,9 @@ members = [
     "app/src-tauri",
 ]
 
+# A local copy of a dependency, not part of this workspace (see below).
+exclude = ["vendor/playwright-rs"]
+
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
@@ -25,3 +28,10 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 serde_json = "1"
+
+# playwright-rs 0.20.1 with one change: on Windows it starts the Playwright
+# driver (node.exe) without a console window. Without it, the installed app
+# (a windowed program) opens a terminal next to every login window. Same
+# version as the pin above; see vendor/playwright-rs/NETLAUNCH.md.
+[patch.crates-io]
+playwright-rs = { path = "vendor/playwright-rs" }
