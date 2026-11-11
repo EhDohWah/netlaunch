@@ -218,16 +218,44 @@ textarea { height: auto; padding: 6px 8px; }
 input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 0; border-bottom: 2px solid var(--accent); }
 input[type="checkbox"], input[type="radio"] { width: auto; height: auto; margin: 0 6px 0 0; }
 
-/* ----- the Add/Edit form and Settings: still the old layout, restyled.
-   They are the next screens to be redesigned. ----- */
-.site-form, .card { max-width: 720px; display: grid; gap: 10px; margin-bottom: 16px; }
+/* ----- the Add/Edit dialog ----- */
+.dialog.wide { width: 620px; display: flex; flex-direction: column; max-height: calc(100vh - 32px); }
+.dialog.wide .dialog-body { overflow-y: auto; gap: 8px; padding-bottom: 16px; }
+.dialog-body h3 {
+  margin: 10px 0 2px; padding-bottom: 4px; border-bottom: 1px solid var(--line);
+  font-size: 12px; line-height: 16px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;
+}
+.dialog.wide .field { grid-template-columns: 150px minmax(0, 1fr); align-items: start; }
+.dialog.wide .field > :first-child { color: var(--muted); padding-top: 6px; }
+.field .hint, .field .problem { display: block; font-size: 12px; line-height: 16px; margin-top: 3px; }
+.field .hint { color: var(--muted); }
+.field .problem { color: var(--error-text); }
+input.invalid, input.invalid:focus-visible { border-color: var(--error-text); }
+.with-button { display: flex; gap: 4px; }
+.toggle { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+.radios { display: grid; gap: 2px; padding-top: 6px; }
+.radios label { display: flex; align-items: center; }
+
+/* A Windows toggle switch, drawn on a checkbox. */
+input.switch {
+  appearance: none; flex: none; width: 40px; height: 20px; margin: 0; padding: 0; border-radius: 10px;
+  border: 1px solid var(--line-strong); background: transparent; position: relative; cursor: pointer;
+}
+input.switch::after {
+  content: ""; position: absolute; left: 3px; top: 3px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--muted); transition: left 0.12s;
+}
+input.switch:checked { background: var(--accent); border-color: var(--accent); }
+input.switch:checked::after { left: 23px; background: var(--accent-text); }
+
+/* ----- Settings: still the old layout, restyled; it is the next screen
+   to be redesigned. ----- */
+.card { max-width: 720px; display: grid; gap: 10px; margin-bottom: 16px; }
 .card { border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; }
-.site-form label, .card label.stack { display: grid; gap: 4px; }
-.site-form label.inline, .card label.inline { display: flex; align-items: baseline; }
-.site-form fieldset { border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px 10px; display: grid; gap: 6px; margin: 0; }
-.site-form legend { padding: 0 4px; color: var(--muted); font-size: 12px; }
-.site-form button, .card button { min-height: 32px; padding: 4px 12px; border-radius: 4px; background: var(--panel); border: 1px solid var(--line); }
-.site-form button.primary, .card button.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; }
+.card label.stack { display: grid; gap: 4px; }
+.card label.inline { display: flex; align-items: baseline; }
+.card button { min-height: 32px; padding: 4px 12px; border-radius: 4px; background: var(--panel); border: 1px solid var(--line); }
+.card button.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; }
 .form-actions { display: flex; gap: 8px; align-items: center; }
 .banner { padding: 8px 12px; border-radius: 4px; margin: 0; }
 .banner p { margin: 4px 0 0; }

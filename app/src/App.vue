@@ -93,7 +93,6 @@ const canOpen = computed(() => !!selected.value && !logins[selected.value.id]?.b
 const windowBusy = computed(() => !selectedSession.value || isBusy(selectedSession.value.state) || !!pending[selectedSession.value.site_id]);
 
 const title = computed(() => {
-  if (form.value) return form.value.site ? 'Edit site' : 'Add site';
   if (page.value === 'settings') return 'Settings';
   if (page.value === 'dashboard') return 'All sites';
   return group.value === null ? 'Groups' : group.value || 'Ungrouped';
@@ -156,10 +155,11 @@ function shortcut(event) {
   if (dialog.value || !status.value?.ok) return;
   if (!event.ctrlKey || event.altKey) return;
   const key = event.key.toLowerCase();
-  if (key === 'n' && !form.value) {
+  if (form.value) return;
+  if (key === 'n') {
     event.preventDefault();
     form.value = { site: null };
-  } else if (key === 'f' && !form.value && page.value !== 'settings') {
+  } else if (key === 'f' && page.value !== 'settings') {
     event.preventDefault();
     searchBox.value?.focus();
     searchBox.value?.select();
@@ -358,7 +358,7 @@ function groupMenu({ group: name, x, y }) {
       </button>
       <strong class="brand">NetLaunch</strong>
 
-      <template v-if="status?.ok && !form && page !== 'settings'">
+      <template v-if="status?.ok && page !== 'settings'">
         <button class="btn accent" title="Add a site (Ctrl+N)" @click="form = { site: null }"><Icon name="add" />Add</button>
         <button class="btn" :disabled="!canOpen" title="Open the selected site (Enter)" @click="open(selected)"><Icon name="open" />Open</button>
         <button class="btn" :disabled="!selected" title="Edit the selected site (F2)" @click="form = { site: selected }"><Icon name="edit" />Edit</button>
@@ -428,12 +428,8 @@ function groupMenu({ group: name, x, y }) {
           <span v-if="status.path" class="dim">Vault file: <code>{{ status.path }}</code></span>
         </div>
 
-        <div v-else-if="page === 'settings' && !form" class="scroll pad">
+        <div v-else-if="page === 'settings'" class="scroll pad">
           <SettingsPage :view="settingsView" :save="saveSettings" :update="update" :vault-path="status.path" @check-update="checkUpdate()" @install-update="installUpdate" />
-        </div>
-
-        <div v-else-if="form" class="scroll pad">
-          <SiteForm :site="form.site" :groups="groupNames" :recipes="recipes" :save="save" @cancel="form = null" />
         </div>
 
         <template v-else>
@@ -491,7 +487,7 @@ function groupMenu({ group: name, x, y }) {
       <span>{{ sites.length }} {{ sites.length === 1 ? 'site' : 'sites' }}</span>
       <span>{{ groupNames.length }} {{ groupNames.length === 1 ? 'group' : 'groups' }}</span>
       <span>{{ sessionList.length }} open {{ sessionList.length === 1 ? 'window' : 'windows' }}</span>
-      <span v-if="!form && page !== 'settings'">{{ title }}<template v-if="selected">: {{ selected.name }} selected</template></span>
+      <span v-if="page !== 'settings'">{{ title }}<template v-if="selected">: {{ selected.name }} selected</template></span>
       <span v-if="notice" class="notice" role="status">{{ notice }}</span>
       <span class="grow"></span>
       <span v-if="settingsView">{{ BROWSERS[settingsView.settings.browser] }}</span>
@@ -499,6 +495,9 @@ function groupMenu({ group: name, x, y }) {
     </footer>
 
     <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menu.items" @close="menu = null" />
+
+    <!-- `key`: a fresh form for each site, never the last one's fields. -->
+    <SiteForm v-if="form" :key="form.site?.id ?? 'new'" :site="form.site" :groups="groupNames" :recipes="recipes" :save="save" @cancel="form = null" />
 
     <Modal v-if="dialog?.kind === 'delete'" :title="`Delete ${dialog.site.name}?`" @cancel="dialog = null" @submit="remove">
       <p>Its saved login is removed from this PC. If its window is open, it is closed first.</p>

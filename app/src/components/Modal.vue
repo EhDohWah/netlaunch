@@ -3,7 +3,13 @@
 // Esc cancels; Enter in a field submits (the content is a form).
 import { onMounted, onUnmounted, ref } from 'vue';
 
-defineProps({ title: { type: String, required: true } });
+const props = defineProps({
+  title: { type: String, required: true },
+  // Room for a two-column form.
+  wide: { type: Boolean, default: false },
+  // A click outside doesn't close it: there is typed text to lose.
+  sticky: { type: Boolean, default: false },
+});
 const emit = defineEmits(['cancel', 'submit']);
 const box = ref(null);
 
@@ -19,8 +25,8 @@ onUnmounted(() => window.removeEventListener('keydown', key));
 </script>
 
 <template>
-  <div class="backdrop" @mousedown.self="emit('cancel')">
-    <form ref="box" class="dialog" role="dialog" aria-modal="true" :aria-label="title" @submit.prevent="emit('submit')">
+  <div class="backdrop" @mousedown.self="props.sticky || emit('cancel')">
+    <form ref="box" class="dialog" :class="{ wide }" novalidate role="dialog" aria-modal="true" :aria-label="title" @submit.prevent="emit('submit')">
       <div class="dialog-body">
         <h2>{{ title }}</h2>
         <slot />
