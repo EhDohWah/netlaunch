@@ -221,12 +221,13 @@ input[type="checkbox"], input[type="radio"] { width: auto; height: auto; margin:
 /* ----- the Add/Edit dialog ----- */
 .dialog.wide { width: 620px; display: flex; flex-direction: column; max-height: calc(100vh - 32px); }
 .dialog.wide .dialog-body { overflow-y: auto; gap: 8px; padding-bottom: 16px; }
-.dialog-body h3 {
+.dialog-body h3, .settings h3 {
   margin: 10px 0 2px; padding-bottom: 4px; border-bottom: 1px solid var(--line);
   font-size: 12px; line-height: 16px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;
 }
 .dialog.wide .field { grid-template-columns: 150px minmax(0, 1fr); align-items: start; }
 .dialog.wide .field > :first-child { color: var(--muted); padding-top: 6px; }
+.settings h3:first-child { margin-top: 0; }
 .field .hint, .field .problem { display: block; font-size: 12px; line-height: 16px; margin-top: 3px; }
 .field .hint { color: var(--muted); }
 .field .problem { color: var(--error-text); }
@@ -248,17 +249,23 @@ input.switch::after {
 input.switch:checked { background: var(--accent); border-color: var(--accent); }
 input.switch:checked::after { left: 23px; background: var(--accent-text); }
 
-/* ----- Settings: still the old layout, restyled; it is the next screen
-   to be redesigned. ----- */
-.card { max-width: 720px; display: grid; gap: 10px; margin-bottom: 16px; }
-.card { border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; }
-.card label.stack { display: grid; gap: 4px; }
-.card label.inline { display: flex; align-items: baseline; }
-.card button { min-height: 32px; padding: 4px 12px; border-radius: 4px; background: var(--panel); border: 1px solid var(--line); }
-.card button.primary { background: var(--accent); color: var(--accent-text); border-color: transparent; }
-.form-actions { display: flex; gap: 8px; align-items: center; }
+/* ----- Settings: the same label-left rows, on the page ----- */
+.settings { max-width: 760px; display: grid; gap: 8px; }
+.settings .field { grid-template-columns: 200px minmax(0, 1fr); align-items: start; }
+.settings .field > :first-child { color: var(--muted); padding-top: 6px; }
+.settings .field > span:last-child code { line-height: 32px; }
+.path { margin-left: 8px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.radios .indent { margin: 2px 0 4px 20px; width: auto; }
+.row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.row .hint { margin: 0; }
+.update-box { display: grid; gap: 6px; padding: 10px 12px; border-radius: 4px; background: var(--ok-bg); color: var(--ok-text); }
+.update-box .hint { color: inherit; }
+.update-box progress { display: block; width: 100%; height: 4px; margin-top: 6px; accent-color: var(--accent); }
 .banner { padding: 8px 12px; border-radius: 4px; margin: 0; }
-.banner p { margin: 4px 0 0; }
-.banner.ok { background: var(--ok-bg); color: var(--ok-text); }
 .banner.error { background: var(--error-bg); color: var(--error-text); }
 .notes { white-space: pre-wrap; }
+
+/* ----- Mica (Windows 11): set by App.vue once Windows confirms the
+   material is on. The window and the page behind the panes go
+   see-through; the panes keep their own solid colour. ----- */
+:root[data-mica], :root[data-mica] body { background: transparent; }

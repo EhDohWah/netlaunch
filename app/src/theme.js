@@ -4,6 +4,7 @@
 // The choice is kept in localStorage. Until the admin picks one, the app
 // follows the Windows setting.
 import { ref } from 'vue';
+import { setWindowTheme } from './api.js';
 
 const KEY = 'netlaunch-theme';
 
@@ -26,6 +27,9 @@ export const theme = ref(stored() ?? system());
 
 function apply() {
   document.documentElement.dataset.theme = theme.value;
+  // The title bar follows too. Not being able to (a plain browser, in
+  // development) doesn't matter.
+  setWindowTheme(theme.value === 'dark').catch(() => {});
 }
 
 /** Called once, before the app is drawn, so it never flashes the other theme. */

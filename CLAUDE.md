@@ -18,6 +18,7 @@ NetLaunch is a Windows desktop app (Rust + Tauri) that stores admin console logi
 - **M6 windows: built** (`crates/sessions`, the Open windows panel). 2FA watched until success, managed and released modes, Release/Close/Retry, signed-in warning. The owner confirmed `/mfa` and the signed-in warning; released mode and `/no-success` are unconfirmed. Timed-out logins in managed windows are watched too, so finishing by hand flips them to Logged in.
 - **M7 pilot: in progress.** CI builds and checks the installer (MSVC, bundled Playwright driver, `--self-check`, uninstall keeps the vault); log file; `probe` tool. On the owner's UniFi and Huawei switch the generic recipe filled the form but found no `type=submit` button; `click` now falls back to Enter in the password field (`else_press_enter_in`). Waiting on the owner's retry.
 - **Sidebar, settings, updates: built, not yet tried by the owner.** Dashboard / Group List / Settings pages; browser choice (`settings.json`); in-app updates (`updates.rs`, `.github/workflows/release.yml`); `password-only` recipe with the `selector_gone` rule. Updates need the owner's signing key (secrets `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, variable `TAURI_UPDATER_PUBKEY`) and a first release; see "Releasing" in `app/README.md`.
+- **Desktop redesign: built, not yet confirmed by the owner in the installed app.** Fluent look: command bar, folding navigation pane with a group tree, site data grid (sort, keyboard, right-click menu), Open windows dock, status bar, Add/Edit dialog, Settings in label-left rows. Mica and the title-bar theme (`set_mica`, `set_window_theme`) could not be tested off Windows.
 - **CI** (`.github/workflows/ci.yml`) runs tests and `clippy -D warnings` on Windows and Linux for every push.
 
 ## Commands
@@ -71,7 +72,9 @@ docs/SPEC.md       the spec
 - **Tauri commands** (`app/src-tauri/src/main.rs`) are thin wrappers. Their logic lives in `sites.rs` (site list), `logins.rs` (Open, and the hooks that turn session news into events and `login_log` rows) and `crates/sessions`, so it's tested without a window.
 - **Capabilities** (`app/src-tauri/capabilities/default.json`): `core:default` only, so no shell, file system or opener plugins. Keep it that way.
   - `tauri-plugin-updater` is registered but called from Rust only (`updates.rs`). Don't grant `updater:*` permissions to the window.
-- **Settings** (`settings.rs`): `%LOCALAPPDATA%\NetLaunch\settings.json`, browser choice and the update check. Never put a secret in it.
+- **Settings** (`settings.rs`): `%LOCALAPPDATA%\NetLaunch\settings.json`: browser choice, the update check, Mica. Never put a secret in it.
+- **Frontend** (`app/src/`): `App.vue` is the shell; `components/SiteGrid.vue` (grid), `WindowDock.vue`, `SiteForm.vue` (dialog), `SettingsPage.vue`, `ContextMenu.vue`, `Modal.vue`, `Icon.vue` (Fluent icons from `@fluentui/svg-icons`, imported one by one). All colours are variables in `style.css`; don't hard-code one.
+- **The window is transparent** (`tauri.conf.json`) so Mica can show. The page must keep a solid background unless `set_mica` returned true (`data-mica` on `<html>`).
 - **The version of a release comes from the Release workflow** (the tag or the typed version), which overrides `tauri.conf.json`. `updates::can_update` is false when the build has no `plugins.updater.pubkey`, as in development.
 - **Wine check of the app.** The windows-gnu build links `WebView2Loader.dll` dynamically. Copy it from `~/.cargo/registry/src/*/webview2-com-sys-*/x64/` next to the test `.exe` before running it under Wine. MSVC builds link it statically.
 

@@ -29,11 +29,14 @@ pub struct Settings {
     pub browser_path: Option<String>,
     /// Look for a new version when NetLaunch starts.
     pub check_updates: bool,
+    /// Windows 11's Mica material behind the window's panes. Ignored on
+    /// Windows 10, which doesn't have it.
+    pub mica: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { browser: BrowserChoice::Edge, browser_path: None, check_updates: true }
+        Settings { browser: BrowserChoice::Edge, browser_path: None, check_updates: true, mica: true }
     }
 }
 
@@ -137,11 +140,12 @@ mod tests {
         let missing = Settings {
             browser: BrowserChoice::Custom,
             browser_path: Some("/no/such/browser.exe".into()),
-            check_updates: true,
+            ..Settings::default()
         };
         assert!(save(Some(&path), missing).is_err());
         assert!(!path.exists(), "nothing is written when the settings are refused");
-        let no_path = Settings { browser: BrowserChoice::Custom, browser_path: Some("  ".into()), check_updates: true };
+        let no_path =
+            Settings { browser: BrowserChoice::Custom, browser_path: Some("  ".into()), ..Settings::default() };
         assert!(save(Some(&path), no_path).is_err());
 
         // Any existing file will do as a stand-in for a browser; quotes
@@ -151,6 +155,7 @@ mod tests {
             browser: BrowserChoice::Custom,
             browser_path: Some(format!(" \"{}\" ", exe.display())),
             check_updates: false,
+            mica: false,
         };
         let saved = save(Some(&path), quoted).unwrap();
         assert_eq!(saved.browser_path.as_deref(), Some(exe.to_str().unwrap()));

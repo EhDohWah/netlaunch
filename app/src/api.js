@@ -85,5 +85,14 @@ export const checkUpdate = () => invoke('check_update');
  */
 export const installUpdate = () => invoke('install_update');
 
+/**
+ * Turns Windows 11's Mica material behind the window on or off. Resolves
+ * to whether it is on now (always false on Windows 10).
+ */
+export const setMica = (on) => invoke('set_mica', { on });
+
+/** Makes the window's title bar (and Mica) light or dark, like the app. */
+export const setWindowTheme = (dark) => invoke('set_window_theme', { dark });
+
 /** Calls `handler({ downloaded, total })` (bytes) while an update downloads. */
 export const onUpdateProgress = (handler) => listen('update-progress', (event) => handler(event.payload));

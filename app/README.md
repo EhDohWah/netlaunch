@@ -3,8 +3,9 @@
 The desktop app: a Tauri 2 window with a Vue 3 + Vite frontend, wired to the vault (`crates/vault`) and the login engine (`crates/engine`, `crates/driver-pw`).
 
 - `src/`: the Vue frontend.
-  - `App.vue` is the sidebar and its three pages (Dashboard, Group List, Settings), and shows the form over them.
-  - `components/SiteList.vue` (flat on the Dashboard, grouped on Group List), `components/SiteForm.vue` and `components/SettingsPage.vue` are the screens.
+  - `App.vue` is the desktop shell: command bar, navigation pane, status bar, shortcuts.
+  - `components/SiteGrid.vue` is the site list (flat on the Dashboard, with group rows on Groups), `WindowDock.vue` the open windows, `SiteForm.vue` the Add/Edit dialog, `SettingsPage.vue` the settings.
+  - `ContextMenu.vue`, `Modal.vue` and `Icon.vue` (Fluent System Icons) are the shared pieces; `style.css` holds every colour, for both themes.
   - `api.js` calls the Rust commands.
 - `src-tauri/`: the Rust side (crate `netlaunch-app`, binary `netlaunch`).
   - `main.rs` holds the commands.
@@ -12,7 +13,6 @@ The desktop app: a Tauri 2 window with a Vue 3 + Vite frontend, wired to the vau
   - `settings.rs` reads and writes `settings.json` (browser choice, update check).
   - `updates.rs` checks for, downloads and installs a newer release.
   - `logins.rs` builds what Open needs from the vault and passes the open windows' news on (events for the panel, results for `login_log`). The windows themselves live in `crates/sessions`.
-- `src/components/SessionPanel.vue` is the "Open windows" panel.
   - `capabilities/default.json` grants only Tauri's core defaults.
 
 ## Install it (M7)
@@ -185,7 +185,9 @@ Keep the mock site running, and use the sites from the M5 check.
 
 ## Check by hand: sidebar, settings, updates
 
-1. **Pages.** The sidebar shows Dashboard, Group List and Settings. Group List folds each group and renames one; the sites keep their passwords.
+1. **Layout.** The navigation pane shows Dashboard, Groups (with each group under it) and, at the bottom, the theme toggle and Settings; it folds to icons. Groups shows a foldable row per group, and Rename group keeps the sites' passwords.
+   - Grid: double-click or Enter opens, F2 edits, Del asks before deleting, Ctrl+N adds, Ctrl+F searches, right-click shows the menu.
+   - On Windows 11, Settings > Appearance > Mica background tints the window with the wallpaper; switching it off gives a flat colour. The title bar follows the light/dark theme.
 2. **Password only.** Add the mock site's `https://localhost:8443/password-only/login` with **Login page type: Password only** (the username field disappears) and the test password. Open logs in.
 3. **Browser.** Settings > Browser: pick Chrome (if installed), Save, then Open a site: it opens in Chrome. Switch back to Edge.
 4. **Updates** (needs two releases, see "Releasing"): with release A installed, publish release B. Start NetLaunch: the Dashboard says B is available. Settings > Updates > Install and restart: the download counts up, NetLaunch closes and comes back as B, with the same sites.
@@ -205,10 +207,12 @@ Keep the mock site running, and use the sites from the M5 check.
 | `list_sessions` | none | `SessionView[]`: `{ site_id, site_name, state, message, warnings, window_mode }` |
 | `release_window` | `{ id }` | nothing; the window is handed over |
 | `close_window` | `{ id }` | nothing; the window is closed |
-| `get_settings` | none | `{ settings, browsers, version, can_update }`; `settings` is `{ browser, browser_path, check_updates }`, `browsers` the ones found on this PC |
+| `get_settings` | none | `{ settings, browsers, version, can_update, mica_supported }`; `settings` is `{ browser, browser_path, check_updates, mica }`, `browsers` the ones found on this PC |
 | `save_settings` | `{ settings }` | the saved settings; fails if the chosen browser isn't there |
 | `check_update` | none | `{ current, can_update, available }`; `available` is `{ version, notes }` or null |
 | `install_update` | none | only an error: on success the app restarts |
+| `set_mica` | `{ on }` | whether Mica is on now (false on Windows 10) |
+| `set_window_theme` | `{ dark }` | nothing; the title bar turns light or dark |
 
 Events:
 - `session-changed`: a `SessionView`, whenever a window's state changes. `state` is `launching`, `loading`, `filling`, `waiting` (the login running), then `waiting_for_2fa`, `logged_in`, `handed_over`, `failed` or `stopped`.

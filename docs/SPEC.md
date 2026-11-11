@@ -273,19 +273,22 @@ Each login is a small JSON recipe: ordered steps, plus rules that say what "logg
 
 ## User interface
 
-A sidebar with three pages, in the Tauri window, built with Vue 3 + Vite (decision 7). The add/edit form opens over the page it was started from.
+A Windows 11 (Fluent) desktop layout in the Tauri window, built with Vue 3 + Vite (decision 7) and hand-written CSS on one set of colour variables (light and dark). Icons are Fluent System Icons (MIT), bundled as inline SVG. Redesigned Nov 11–12, 2026 at the owner's request; commands, storage and login behaviour were not changed.
 
-| Page | What it shows | Actions |
+| Part | What it shows | Actions |
 |---|---|---|
-| Dashboard (home) | Counts (sites, groups, open windows), a banner when an update is available, the session panel, and every site in one searchable list with its group as a tag | Add site, Open, Edit, Delete |
-| Group List | The same sites, one foldable section per `group_name` (ungrouped last) | Rename a group (saves each of its sites), Add, Open, Edit, Delete |
-| Settings | Browser, Updates, and where the files are | Save browser, Check for updates, Install and restart |
-| Add / edit site (form) | Name, group, login URL, login page type (recipe), username (hidden for `password-only`), password (write-only), self-signed toggle, profile mode, window mode | Save |
-| Session panel (on the Dashboard) | Live status per open site: Launching, Filling, Waiting for 2FA, Logged in, Failed. A warning when the window is signed in to the Windows account (decision 9) | Release window, Close window, Retry |
+| Command bar (top) | The app name, the commands for the selected site, the search box | Add (Ctrl+N), Open, Edit, Delete, Release, Close window, Retry, Rename group, Search (Ctrl+F; Enter opens the first match) |
+| Navigation pane (left, folds to icons) | Dashboard, Groups with one entry per group, and at the bottom the theme toggle and Settings | Pick a page or a group |
+| Site grid | One row per site: Name, Group, URL, Username, Last used, Status (small badges: login state, self-signed, password only, released). Columns sort. On Groups, a foldable header row per group | Select; double-click or Enter opens; F2 edits; Del deletes (after a confirmation); right-click menu with the same commands plus Copy URL and Move to group |
+| Info bar (above the grid) | The selected site's last login message and warnings, the "Trust this certificate" button, a new version, load errors | |
+| Open windows dock (under the grid, when any are open) | Live status per open window, with its message and warnings (including the signed-in warning, decision 9) | Release, Close, Retry |
+| Status bar (bottom) | Site, group and open-window counts, the last action, the browser, the version | |
+| Add / edit site (dialog) | Sections General, Login, Security, Behaviour; label left, field right; a message under each field that needs fixing | Save, Cancel (Esc) |
+| Settings (page) | Browser, Appearance, Updates, Files, in the same label-left rows | Apply, switches, Check for updates, Install and restart |
 
-Settings and a light/dark toggle are pinned to the bottom of the sidebar. The theme choice is kept in the webview's `localStorage`; until one is made, the app follows the Windows setting. Both themes use the same CSS variables (`style.css`).
-
-The password field on the edit screen is always empty when opened. Leaving it empty keeps the stored password; typing a new one replaces it.
+- The password field in the dialog is always empty when opened. Leaving it empty keeps the stored password; typing a new one replaces it. Its reveal button shows only what is being typed: a stored password is never sent to the window.
+- The theme choice and the folded state of the navigation pane are kept in the webview's `localStorage`. Until a theme is chosen, the app follows the Windows setting. The window's title bar is switched to match (`set_window_theme`).
+- **Mica** (Windows 11 only): the window is created transparent, and `set_mica` turns the material on when the setting is on and the Windows build is 22000 or later. Only then does the page drop its own background; otherwise it paints a solid colour, so nothing shows through on Windows 10.
 
 ### Settings
 
@@ -296,6 +299,7 @@ Kept in `%LOCALAPPDATA%\NetLaunch\settings.json`, next to the vault. Nothing sec
   - The isolation switches and the seeded preferences are the same for every browser; the Edge-only ones are ignored by the others. The signed-in warning is about Edge's implicit sign-in, and CI only tests Edge (Windows) and Chrome (Linux).
   - A change applies to the next Open. Open windows keep their browser.
 - **Check for updates when NetLaunch starts** (`check_updates`, default on).
+- **Mica background** (`mica`, default on; does nothing on Windows 10).
 
 ### Updates
 

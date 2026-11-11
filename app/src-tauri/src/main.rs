@@ -180,6 +180,8 @@ struct SettingsView {
     /// without asking GitHub).
     version: String,
     can_update: bool,
+    /// True on Windows 11, where the Mica setting does something.
+    mica_supported: bool,
 }
 
 #[tauri::command]
@@ -190,6 +192,7 @@ fn get_settings(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<Set
         browsers: settings::installed_browsers(),
         version: app.package_info().version.to_string(),
         can_update: updates::can_update(&app),
+        mica_supported: mica_supported(),
     })
 }
 
@@ -200,6 +203,50 @@ fn save_settings(state: State<'_, AppState>, settings: settings::Settings) -> Re
     let saved = settings::save(state.settings_path.as_deref(), settings)?;
     *state.settings.lock().map_err(|_| "the settings are unavailable")? = saved.clone();
     Ok(saved)
+}
+
+/// True on Windows 11 (build 22000 or later), the first Windows with the
+/// Mica material.
+fn mica_supported() -> bool {
+    #[cfg(windows)]
+    {
+        windows_registry::LOCAL_MACHINE
+            .open(r"SOFTWARE\Microsoft\Windows NT\CurrentVersion")
+            .and_then(|key| key.get_string("CurrentBuildNumber"))
+            .ok()
+            .and_then(|build| build.trim().parse::<u32>().ok())
+            .is_some_and(|build| build >= 22000)
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+/// Turns the Mica material behind the main window on or off. The window
+/// is created see-through (tauri.conf.json) so Mica can show; the page
+/// paints its own solid background whenever Mica is off, so nothing
+/// behind the window ever shows through. Returns whether Mica is now on.
+#[tauri::command]
+fn set_mica(app: tauri::AppHandle, on: bool) -> bool {
+    use tauri::window::{Effect, EffectsBuilder};
+
+    let Some(window) = app.get_webview_window("main") else { return false };
+    if on && mica_supported() {
+        window.set_effects(EffectsBuilder::new().effect(Effect::Mica).build()).is_ok()
+    } else {
+        let _ = window.set_effects(None);
+        false
+    }
+}
+
+/// Makes the window itself (title bar, Mica) light or dark, to match the
+/// theme chosen in the app rather than the Windows setting.
+#[tauri::command]
+fn set_window_theme(app: tauri::AppHandle, dark: bool) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.set_theme(Some(if dark { tauri::Theme::Dark } else { tauri::Theme::Light }));
+    }
 }
 
 /// Settings > Updates: this version, and a newer one if GitHub has it.
@@ -337,7 +384,9 @@ fn main() -> std::process::ExitCode {
             get_settings,
             save_settings,
             check_update,
-            install_update
+            install_update,
+            set_mica,
+            set_window_theme
         ])
         .build(tauri::generate_context!())
         .expect("error while building NetLaunch");

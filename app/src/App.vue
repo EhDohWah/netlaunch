@@ -138,7 +138,21 @@ async function installUpdate() {
 async function saveSettings(settings) {
   const saved = await api.saveSettings(settings);
   settingsView.value = { ...settingsView.value, settings: saved };
+  await applyMica();
   return saved;
+}
+
+// Mica shows through a see-through page, so the page only drops its own
+// background once Windows confirms the material is on.
+async function applyMica() {
+  let on = false;
+  try {
+    on = await api.setMica(!!settingsView.value?.settings.mica);
+  } catch {
+    // Left off.
+  }
+  if (on) document.documentElement.dataset.mica = 'on';
+  else delete document.documentElement.dataset.mica;
 }
 
 async function reload() {
@@ -187,6 +201,7 @@ onMounted(async () => {
   } catch {
     // The Settings page stays on "Loading"; everything else works.
   }
+  applyMica();
   if (settingsView.value?.settings.check_updates) {
     checkUpdate(true);
     // And every six hours, for an app left open all week.
