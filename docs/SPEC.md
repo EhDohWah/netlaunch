@@ -261,6 +261,7 @@ Each login is a small JSON recipe: ordered steps, plus rules that say what "logg
   - **URL rules only count on the site's own origin.** Otherwise "the URL no longer contains `/login`" would also be true of a browser error page, or of a redirect to another site.
   - **`failure` (added in M5)** says the site rejected the login. A failure rule that already matched before the last step (a banner that's always on the login page) is ignored afterwards.
 - **Outcomes:** logged in; 2FA hand-over; rejected (`failed`); timed out; origin mismatch; an untrusted certificate (logged as `failed`); or an error (the page didn't load, the window was closed).
+  - An **aborted** first navigation (`net::ERR_ABORTED`) is not an error: the site redirected at once, so the browser dropped the first navigation for the next. The login carries on; the wait step and the origin check decide what happens. (CI's `/redirect-away` hit this in Edge on Windows, Nov 11, 2026.)
   - Network failures get a plain sentence from the browser's `net::ERR_...` code (refused, address not found, no answer, TLS problems), never Playwright's stack trace. Every outcome except a closed window ends with the window brought to the front.
 - **Built-in recipes** are JSON files in `crates/engine/recipes/`, compiled into the app. They're checked when they load, and a site can only be saved with a recipe that exists.
   - `generic-form`: one page with username and password.

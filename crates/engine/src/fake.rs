@@ -136,12 +136,14 @@ impl FakeDriver {
 impl BrowserDriver for FakeDriver {
     async fn goto(&self, url: &str) -> DriverResult<()> {
         self.check_open()?;
-        if let Some(error) = self.state.lock().unwrap().goto_error.clone() {
-            return Err(error);
-        }
         self.state.lock().unwrap().page.url = url.to_string();
         self.fire(|s| &mut s.on_goto, url);
-        Ok(())
+        // After the page changed: a real browser can report an error
+        // (an aborted navigation) and still have landed somewhere.
+        match self.state.lock().unwrap().goto_error.clone() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 
     async fn wait_visible(&self, selector: &str, _timeout_ms: u64) -> DriverResult<()> {

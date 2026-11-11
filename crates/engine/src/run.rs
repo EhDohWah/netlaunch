@@ -171,8 +171,17 @@ async fn run_steps_and_wait<D: BrowserDriver>(
             Step::Goto {} => {
                 progress(Progress::Loading);
                 tracing::info!(step = number, "goto login URL");
-                if let Err(e) = driver.goto(target.login_url).await {
-                    return page_did_not_load(e, &expected);
+                match driver.goto(target.login_url).await {
+                    Ok(()) => {}
+                    // "Aborted" means the browser dropped this navigation
+                    // for another one: the site redirected at once (to
+                    // another port, or by script). Something did load, so
+                    // carry on. The next steps wait for the form and check
+                    // the origin before typing, wherever the page ended up.
+                    Err(DriverError::Other(text)) if net_error_code(&text).as_deref() == Some("ERR_ABORTED") => {
+                        tracing::info!(step = number, "the first navigation was replaced by a redirect");
+                    }
+                    Err(e) => return page_did_not_load(e, &expected),
                 }
             }
             Step::Wait { selector, timeout_ms } => {

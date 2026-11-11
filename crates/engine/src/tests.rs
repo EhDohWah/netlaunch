@@ -288,6 +288,28 @@ async fn certificate_errors_are_recognized() {
     assert!(!message.contains("coreBundle"), "no stack trace: {message}");
 }
 
+/// A site that redirects at once makes the browser report the first
+/// navigation as aborted (seen in Edge on Windows with `/redirect-away`).
+/// That isn't a failure: the login carries on, and the origin check still
+/// decides whether anything is typed.
+#[tokio::test]
+async fn an_aborted_first_navigation_is_not_an_error() {
+    // The redirect stayed on the site: the form is there, so log in.
+    let driver = FakeDriver::login_form_at(LOGIN_URL);
+    driver.fail_goto_with(DriverError::Other("net::ERR_ABORTED at https://console.example:8443/login".into()));
+    driver.on_click(|page, _| page.url = "https://console.example:8443/home".into());
+    let (outcome, _, _) = login(&driver, &generic(1000)).await;
+    assert_eq!(outcome, Outcome::LoggedIn);
+
+    // The redirect left the site: a mismatch, and nothing typed.
+    let driver = FakeDriver::login_form_at("https://console.example:8444/login");
+    driver.fail_goto_with(DriverError::Other("net::ERR_ABORTED".into()));
+    let (outcome, asked, _) = login(&driver, &generic(1000)).await;
+    assert!(matches!(outcome, Outcome::OriginMismatch { .. }), "{outcome:?}");
+    assert_eq!(asked, 0);
+    assert!(driver.fills().is_empty());
+}
+
 #[tokio::test]
 async fn network_errors_get_plain_messages() {
     for (code, expect) in [
