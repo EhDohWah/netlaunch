@@ -282,6 +282,8 @@ A sidebar with three pages, in the Tauri window, built with Vue 3 + Vite (decisi
 | Add / edit site (form) | Name, group, login URL, login page type (recipe), username (hidden for `password-only`), password (write-only), self-signed toggle, profile mode, window mode | Save |
 | Session panel (on the Dashboard) | Live status per open site: Launching, Filling, Waiting for 2FA, Logged in, Failed. A warning when the window is signed in to the Windows account (decision 9) | Release window, Close window, Retry |
 
+Settings and a light/dark toggle are pinned to the bottom of the sidebar. The theme choice is kept in the webview's `localStorage`; until one is made, the app follows the Windows setting. Both themes use the same CSS variables (`style.css`).
+
 The password field on the edit screen is always empty when opened. Leaving it empty keeps the stored password; typing a new one replaces it.
 
 ### Settings

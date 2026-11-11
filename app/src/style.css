@@ -17,25 +17,27 @@
   font-size: 15px;
   color: var(--text);
   background: var(--bg);
+  /* Scrollbars and form controls follow the theme too. */
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #161b22;
-    --panel: #1f2630;
-    --text: #e6ebf1;
-    --muted: #9aa7b4;
-    --line: #2f3a46;
-    --accent: #5bc0be;
-    --accent-text: #0f1a1a;
-    --ok-bg: #1d3626;
-    --ok-text: #a8e0b5;
-    --error-bg: #3d1f1d;
-    --error-text: #f4b4ae;
-    --warn-bg: #3a2e14;
-    --warn-text: #f3d08a;
-    --tag-bg: #2a3440;
-  }
+/* Set by theme.js: the saved choice, or the Windows setting. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #161b22;
+  --panel: #1f2630;
+  --text: #e6ebf1;
+  --muted: #9aa7b4;
+  --line: #2f3a46;
+  --accent: #5bc0be;
+  --accent-text: #0f1a1a;
+  --ok-bg: #1d3626;
+  --ok-text: #a8e0b5;
+  --error-bg: #3d1f1d;
+  --error-text: #f4b4ae;
+  --warn-bg: #3a2e14;
+  --warn-text: #f3d08a;
+  --tag-bg: #2a3440;
 }
 
 * { box-sizing: border-box; }
@@ -57,7 +59,9 @@ button.nav:hover { background: var(--tag-bg); }
 button.nav.current { background: var(--accent); color: var(--accent-text); }
 .count { padding: 0 7px; border-radius: 10px; background: var(--tag-bg); color: var(--text); font-size: 0.78rem; }
 .dot { padding: 0 7px; border-radius: 10px; background: var(--warn-bg); color: var(--warn-text); font-size: 0.78rem; }
-.version { margin-top: auto; padding: 0 10px; }
+/* Pushes what follows (theme toggle, Settings, version) to the bottom. */
+.sidebar .spacer { flex: 1; }
+.version { padding: 8px 10px 0; }
 
 main { flex: 1; min-width: 0; max-width: 940px; padding: 20px 28px 48px; }
 .page-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; min-height: 34px; }

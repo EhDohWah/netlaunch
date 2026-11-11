@@ -9,12 +9,15 @@ import SiteList from './components/SiteList.vue';
 import SiteForm from './components/SiteForm.vue';
 import SessionPanel from './components/SessionPanel.vue';
 import SettingsPage from './components/SettingsPage.vue';
+import { theme, toggleTheme } from './theme.js';
 
 const PAGES = [
   { id: 'dashboard', label: 'Dashboard' },
   { id: 'groups', label: 'Group List' },
   { id: 'settings', label: 'Settings' },
 ];
+// Settings sits at the bottom of the sidebar, apart from the other pages.
+const TOP_PAGES = PAGES.filter((p) => p.id !== 'settings');
 const page = ref('dashboard');
 
 const status = ref(null);
@@ -217,7 +220,7 @@ async function remove(site) {
     <nav class="sidebar" aria-label="Main">
       <div class="brand">NetLaunch</div>
       <button
-        v-for="p in PAGES"
+        v-for="p in TOP_PAGES"
         :key="p.id"
         class="nav"
         :class="{ current: page === p.id }"
@@ -226,7 +229,21 @@ async function remove(site) {
       >
         {{ p.label }}
         <span v-if="p.id === 'dashboard' && sessionList.length" class="count" title="Open windows">{{ sessionList.length }}</span>
-        <span v-if="p.id === 'settings' && update.status?.available" class="dot" title="An update is available">Update</span>
+      </button>
+
+      <div class="spacer"></div>
+      <button class="nav" :title="`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`" @click="toggleTheme">
+        {{ theme === 'dark' ? 'Light mode' : 'Dark mode' }}
+        <span aria-hidden="true">{{ theme === 'dark' ? '☀' : '☾' }}</span>
+      </button>
+      <button
+        class="nav"
+        :class="{ current: page === 'settings' }"
+        :aria-current="page === 'settings' ? 'page' : undefined"
+        @click="go('settings')"
+      >
+        Settings
+        <span v-if="update.status?.available" class="dot" title="An update is available">Update</span>
       </button>
       <div class="version muted small">{{ settingsView ? `Version ${settingsView.version}` : '' }}</div>
     </nav>
