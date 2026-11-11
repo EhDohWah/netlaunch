@@ -32,6 +32,7 @@ struct State {
     /// (selector, text typed). Tests only: the real driver keeps nothing.
     fills: Vec<(String, String)>,
     clicks: Vec<String>,
+    presses: Vec<(String, String)>,
     brought_to_front: bool,
     on_goto: Option<Hook>,
     on_click: Option<Hook>,
@@ -90,6 +91,10 @@ impl FakeDriver {
 
     pub fn fills(&self) -> Vec<(String, String)> {
         self.state.lock().unwrap().fills.clone()
+    }
+
+    pub fn presses(&self) -> Vec<(String, String)> {
+        self.state.lock().unwrap().presses.clone()
     }
 
     pub fn clicks(&self) -> Vec<String> {
@@ -169,8 +174,12 @@ impl BrowserDriver for FakeDriver {
         self.require_visible(selector)
     }
 
-    async fn press(&self, selector: &str, _key: &str) -> DriverResult<()> {
-        self.require_visible(selector)
+    async fn press(&self, selector: &str, key: &str) -> DriverResult<()> {
+        self.require_visible(selector)?;
+        self.state.lock().unwrap().presses.push((selector.to_string(), key.to_string()));
+        // Enter in a field submits the form, like a click on its button.
+        self.fire(|s| &mut s.on_click, selector);
+        Ok(())
     }
 
     async fn current_url(&self) -> DriverResult<String> {

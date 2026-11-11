@@ -113,6 +113,16 @@ impl Fixture {
     ) -> Result<OpenResult, String> {
         let mut recipe = builtin("generic-form").unwrap();
         recipe.timeout_ms = timeout_ms;
+        self.open_recipe(scenario, mode, recipe, profile).await
+    }
+
+    async fn open_recipe(
+        &self,
+        scenario: &str,
+        mode: WindowMode,
+        recipe: netlaunch_engine::Recipe,
+        profile: Profile,
+    ) -> Result<OpenResult, String> {
         let request = OpenRequest {
             site_id: SITE,
             site_name: format!("Mock {scenario}"),
@@ -296,6 +306,29 @@ async fn no_success_released_is_handed_over_at_once() {
     // On Windows the released headless Edge is left to the CI runner,
     // which is thrown away after the job.
     remove_dir(profile).await;
+    f.mock.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn finishing_a_timed_out_login_by_hand_is_noticed() {
+    let Some((browser, _turn)) = start("finishing_a_timed_out_login_by_hand_is_noticed").await else { return };
+    let f = fixture(browser, Duration::from_secs(60)).await;
+
+    // /mfa with a recipe that knows no 2FA rule: the login "times out" on
+    // the code page, as a real site's would when a step fails.
+    let mut recipe = builtin("generic-form").unwrap();
+    recipe.timeout_ms = 2_000;
+    recipe.mfa.any.clear();
+    let result = f.open_recipe("mfa", WindowMode::Managed, recipe, Profile::Fresh).await.unwrap();
+    assert_eq!(result.outcome, LoginOutcome::Timeout);
+    assert_eq!(f.state(), Some(State::HandedOver));
+
+    // The admin finishes by hand.
+    f.type_the_code().await;
+    f.wait_for("logged in", |f| f.state() == Some(State::LoggedIn)).await;
+    assert_eq!(f.recorder.outcomes(), vec![LoginOutcome::Timeout, LoginOutcome::Success]);
+
+    f.sessions.close(SITE).await.unwrap();
     f.mock.shutdown();
 }
 

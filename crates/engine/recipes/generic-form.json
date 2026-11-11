@@ -7,7 +7,7 @@
     { "action": "wait",  "selector": "input[type=password]", "timeout_ms": 15000 },
     { "action": "fill",  "selector": "input[autocomplete=username], input[type=email], input[type=text]", "value": "{username}" },
     { "action": "fill",  "selector": "input[type=password]", "value": "{password}" },
-    { "action": "click", "selector": "button[type=submit], input[type=submit]" }
+    { "action": "click", "selector": "button[type=submit], input[type=submit]", "else_press_enter_in": "input[type=password]" }
   ],
   "success": { "any": [ { "url_not_contains": "/login" } ] },
   "mfa":     { "any": [ { "selector": "input[autocomplete=one-time-code]" },

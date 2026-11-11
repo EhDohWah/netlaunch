@@ -256,6 +256,23 @@ async fn network_errors_get_plain_messages() {
 }
 
 #[tokio::test]
+async fn without_a_submit_button_enter_is_pressed_in_the_password_field() {
+    // Like UniFi or a Huawei switch: the login button isn't type=submit.
+    let driver = FakeDriver::default();
+    driver.on_goto(|page, _| {
+        page.url = LOGIN_URL.into();
+        page.visible = [USER, PASS].map(String::from).into();
+    });
+    driver.on_click(|page, _| page.url = "https://console.example:8443/home".into());
+
+    let (outcome, _, _) = login(&driver, &generic(1000)).await;
+
+    assert_eq!(outcome, Outcome::LoggedIn);
+    assert!(driver.clicks().is_empty());
+    assert_eq!(driver.presses(), vec![(PASS.to_string(), "Enter".to_string())]);
+}
+
+#[tokio::test]
 async fn logged_in_watches_only_the_success_rule() {
     let recipe = generic(1000);
     let driver = FakeDriver::login_form_at(LOGIN_URL);

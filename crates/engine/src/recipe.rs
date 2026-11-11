@@ -52,7 +52,15 @@ pub enum Step {
     },
     /// Types into the first visible match. The origin is checked first.
     Fill { selector: String, value: FillValue },
-    Click { selector: String },
+    Click {
+        selector: String,
+        /// If no visible element matches `selector`, press Enter in this
+        /// field instead. Many consoles (UniFi, Huawei switches) have a
+        /// login button that isn't a `type=submit` button, but nearly all
+        /// log in when Enter is pressed in the password field.
+        #[serde(default)]
+        else_press_enter_in: Option<String>,
+    },
     /// Picks an option in a `<select>` by its value (e.g. a Proxmox realm).
     Select { selector: String, value: String },
     /// Presses a key in an element, such as `Enter`.
@@ -156,7 +164,7 @@ impl Recipe {
                 Step::Goto {} => continue,
                 Step::Wait { selector, .. }
                 | Step::Fill { selector, .. }
-                | Step::Click { selector }
+                | Step::Click { selector, .. }
                 | Step::Select { selector, .. }
                 | Step::Press { selector, .. } => selector,
             };

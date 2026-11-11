@@ -239,7 +239,8 @@ Each login is a small JSON recipe: ordered steps, plus rules that say what "logg
     { "action": "wait",  "selector": "input[type=password]", "timeout_ms": 15000 },
     { "action": "fill",  "selector": "input[autocomplete=username], input[type=email], input[type=text]", "value": "{username}" },
     { "action": "fill",  "selector": "input[type=password]", "value": "{password}" },
-    { "action": "click", "selector": "button[type=submit], input[type=submit]" }
+    { "action": "click", "selector": "button[type=submit], input[type=submit]",
+      "else_press_enter_in": "input[type=password]" }
   ],
   "success": { "any": [ { "url_not_contains": "/login" } ] },
   "mfa":     { "any": [ { "selector": "input[autocomplete=one-time-code]" },
@@ -250,6 +251,7 @@ Each login is a small JSON recipe: ordered steps, plus rules that say what "logg
 
 - **Step actions (v1):** `goto`, `wait` (selector visible), `fill`, `click`, `select` (dropdowns such as the Proxmox realm), `press` (a key, such as Enter).
   - `goto` takes no URL: it always opens the site's saved login URL, so a recipe can't send the browser anywhere else. It must be the first step, and only the first.
+  - `click` may name a fallback field, `else_press_enter_in`. If no visible element matches the button selector, the engine presses Enter in that field instead. The owner's UniFi controller and Huawei switch both have login buttons that aren't `type=submit`.
   - Every action uses the **first visible** element that matches. Generic selectors can match several inputs, and hidden decoy fields are skipped.
 - **Placeholders:** only `{username}` and `{password}`, each as the whole value. The password is substituted inside the Rust engine at fill time and is never written into the recipe or logs. Any other `{...}` is rejected when the recipe loads.
 - **Detection rules:** `selector`, `text` (visible text contains, ignoring case), `url_contains`, `url_not_contains`.
@@ -385,7 +387,10 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
      - **The closed-window message names its cause** after one Windows run reported `/redirect-away`'s window closed (it had passed five times). Liveness now falls back to the DevTools port when the process NetLaunch started has exited, since Edge can carry on in another process.
      - **No terminal window** (Nov 10, 2026): the owner's first installed run opened a terminal in front of the login window. It was the Playwright driver (`node.exe`): a console program started from a windowed app gets its own console. playwright-rs has no way to pass Windows creation flags, so `vendor/playwright-rs` is 0.20.1 with `CREATE_NO_WINDOW` added (as Playwright's own Python and .NET clients do), used through `[patch.crates-io]`.
      - **Edge's "unsupported command-line flag: --ignore-certificate-errors" bar** stays, for self-signed sites only. The CDP alternative (`Security.setIgnoreCertificateErrors`) lasts only while NetLaunch is connected, so a released window would start rejecting the site's certificate. The bar is also an honest warning.
-     - **UniFi recipe:** waiting for the owner's `probe` output from the real login page (`probe/README.md`). The generic recipe may already work.
+     - **First real consoles** (Nov 10–11, 2026): on UniFi and a Huawei switch the generic recipe filled both fields, then timed out on the submit button. The owner confirmed the signed-in warning appears. Two changes followed:
+       - the Enter fallback above, in both built-in recipes;
+       - a timed-out login in a managed window is now watched like a 2FA hand-over, so finishing it by hand flips the row to Logged in and updates `login_log`.
+     - **UniFi recipe:** may not be needed if the Enter fallback works; otherwise waiting for the owner's `probe` output from the real login page (`probe/README.md`). The generic recipe may already work.
 
 ## Open decisions
 

@@ -99,7 +99,7 @@ fn recipe_selectors(recipes: &[Recipe]) -> Vec<String> {
                 Step::Goto {} => {}
                 Step::Wait { selector, .. }
                 | Step::Fill { selector, .. }
-                | Step::Click { selector }
+                | Step::Click { selector, .. }
                 | Step::Select { selector, .. }
                 | Step::Press { selector, .. } => {
                     set.insert(selector.clone());

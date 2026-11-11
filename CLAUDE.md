@@ -15,8 +15,8 @@ NetLaunch is a Windows desktop app (Rust + Tauri) that stores admin console logi
   - Tauri is pinned to 2.11 on both sides: the Rust crate `~2.11` and npm `~2.11.x`. 2.12 needs Rust 1.90. Bump all three together.
   - The owner builds with the GNU toolchain (MinGW). It works, but the linker warns about duplicate manifests. Switch to MSVC before the M7 installer.
 - **M5 login engine: done** (`crates/engine`, `crates/driver-pw`, Open in the app). Every mock scenario passes in Edge in CI and on the owner's PC.
-- **M6 windows: built** (`crates/sessions`, the Open windows panel). 2FA watched until success, managed and released modes, Release/Close/Retry, signed-in warning. The owner confirmed `/mfa`; released mode, `/no-success` and the warning are unconfirmed.
-- **M7 pilot: in progress.** CI builds and checks the installer (MSVC, bundled Playwright driver, `--self-check`, uninstall keeps the vault); log file; `probe` tool. The UniFi recipe waits for the owner's probe output.
+- **M6 windows: built** (`crates/sessions`, the Open windows panel). 2FA watched until success, managed and released modes, Release/Close/Retry, signed-in warning. The owner confirmed `/mfa` and the signed-in warning; released mode and `/no-success` are unconfirmed. Timed-out logins in managed windows are watched too, so finishing by hand flips them to Logged in.
+- **M7 pilot: in progress.** CI builds and checks the installer (MSVC, bundled Playwright driver, `--self-check`, uninstall keeps the vault); log file; `probe` tool. On the owner's UniFi and Huawei switch the generic recipe filled the form but found no `type=submit` button; `click` now falls back to Enter in the password field (`else_press_enter_in`). Waiting on the owner's retry.
 - **CI** (`.github/workflows/ci.yml`) runs tests and `clippy -D warnings` on Windows and Linux for every push.
 
 ## Commands

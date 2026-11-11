@@ -226,10 +226,23 @@ async fn run_steps_and_wait<D: BrowserDriver>(
                     return step_failed(e, &format!("filling `{selector}`"), Some(text));
                 }
             }
-            Step::Click { selector } => {
-                tracing::info!(step = number, %selector, "click");
-                if let Err(e) = driver.click(selector).await {
-                    return step_failed(e, &format!("clicking `{selector}`"), None);
+            Step::Click { selector, else_press_enter_in } => {
+                // No such button on this page? Press Enter in the fallback
+                // field instead of waiting for a button that won't come.
+                let button_there = driver.is_visible(selector).await.unwrap_or(false);
+                match else_press_enter_in {
+                    Some(field) if !button_there => {
+                        tracing::info!(step = number, %selector, %field, "no button matched; pressing Enter");
+                        if let Err(e) = driver.press(field, "Enter").await {
+                            return step_failed(e, &format!("pressing Enter in `{field}`"), None);
+                        }
+                    }
+                    _ => {
+                        tracing::info!(step = number, %selector, "click");
+                        if let Err(e) = driver.click(selector).await {
+                            return step_failed(e, &format!("clicking `{selector}`"), None);
+                        }
+                    }
                 }
             }
             Step::Select { selector, value } => {

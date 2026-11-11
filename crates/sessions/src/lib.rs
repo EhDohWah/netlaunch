@@ -7,6 +7,9 @@
 //!   status flips to "logged in" and the login history is updated. If they
 //!   don't finish within [`Settings::handover_watch`], the window is simply
 //!   theirs.
+//! - **Timed-out logins** (a step failed, or no rule matched) are watched
+//!   the same way: if the admin finishes the login by hand, the status
+//!   flips to "logged in".
 //! - **Managed windows** stay connected until the admin presses Close or
 //!   Release, closes the window themselves, or NetLaunch exits.
 //! - **Released windows** are handed over (disconnected, Edge keeps
@@ -279,6 +282,9 @@ impl Sessions {
             Outcome::Rejected { .. } | Outcome::Error(_) | Outcome::UntrustedCertificate { .. } => State::Failed,
         };
         let watch_2fa = view.state == State::WaitingFor2fa;
+        // A timed-out login is watched too: when the admin finishes it by
+        // hand, the status flips to logged in.
+        let watch_by_hand = view.state == State::HandedOver;
 
         // A released window is handed over as soon as the login is
         // finished. With a 2FA prompt it isn't yet: watch it first.
@@ -303,7 +309,9 @@ impl Sessions {
             recipe,
             login_url,
             log_id,
-            handover_until: watch_2fa.then(|| Instant::now() + self.inner.settings.handover_watch),
+            handover_until: (watch_2fa || watch_by_hand)
+                .then(|| Instant::now() + self.inner.settings.handover_watch),
+            after_2fa: watch_2fa,
         };
         let watcher = tokio::spawn(watch_window(self.clone(), site_id, watch));
         if let Some(entry) = self.lock().get_mut(&site_id) {
@@ -431,6 +439,9 @@ struct Watch {
     log_id: i64,
     /// While set, the window is waiting for the admin's 2FA, until then.
     handover_until: Option<Instant>,
+    /// What's being waited for: a 2FA prompt (true), or the admin
+    /// finishing a timed-out login by hand (false).
+    after_2fa: bool,
 }
 
 /// One per kept window. Every tick it checks the window still exists,
@@ -466,7 +477,8 @@ async fn watch_window(sessions: Sessions, site_id: i64, mut watch: Watch) {
         let Some(until) = watch.handover_until else { continue };
         let finished = match netlaunch_engine::logged_in(&*session, &watch.recipe, &watch.login_url).await {
             Ok(true) => {
-                let message = "Logged in after 2FA.";
+                let message =
+                    if watch.after_2fa { "Logged in after 2FA." } else { "Logged in: you finished it by hand." };
                 hooks.record(watch.log_id, LoginOutcome::Success, message);
                 sessions.update(site_id, |view| {
                     view.state = State::LoggedIn;
@@ -476,6 +488,9 @@ async fn watch_window(sessions: Sessions, site_id: i64, mut watch: Watch) {
             }
             // Gone: the next tick notices it isn't running.
             Err(DriverError::Closed(_)) => false,
+            // A hand-finished login that never came: the row already
+            // says the window is theirs, so just stop watching.
+            _ if Instant::now() >= until && !watch.after_2fa => true,
             _ if Instant::now() >= until => {
                 let minutes = settings.handover_watch.as_secs().div_ceil(60);
                 let message = format!("The 2FA wasn't finished within {minutes} min. The window is yours.");
