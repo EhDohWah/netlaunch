@@ -9,7 +9,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod logins;
+mod settings;
 mod sites;
+mod updates;
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -49,6 +51,9 @@ struct AppState {
     path: Option<PathBuf>,
     /// The browser windows logins opened.
     sessions: Sessions,
+    /// Settings > Browser and Updates, as last loaded or saved.
+    settings: Mutex<settings::Settings>,
+    settings_path: Option<PathBuf>,
 }
 
 /// Opens `%LOCALAPPDATA%\NetLaunch\vault.db` with its key protected by
@@ -122,21 +127,30 @@ fn trust_certificate(state: State<'_, AppState>, id: i64) -> Result<Site, String
 struct RecipeInfo {
     id: String,
     name: String,
+    /// False for a recipe that types no username; the form then hides
+    /// the username field.
+    needs_username: bool,
 }
 
 /// The built-in login recipes, for the recipe dropdown.
 #[tauri::command]
 fn list_recipes() -> Vec<RecipeInfo> {
-    netlaunch_engine::builtin_list().into_iter().map(|(id, name)| RecipeInfo { id, name }).collect()
+    netlaunch_engine::builtin_list()
+        .into_iter()
+        .map(|r| RecipeInfo { needs_username: r.needs_username(), id: r.id, name: r.name })
+        .collect()
 }
 
-/// The Open button: launches Edge and logs in. Progress arrives as
+/// The Open button: launches the browser chosen in Settings and logs in. Progress arrives as
 /// `session-changed` events; this resolves with the result.
 ///
 /// `async`, so the login (up to a minute) runs without freezing the window.
 #[tauri::command]
 async fn open_site(state: State<'_, AppState>, id: i64) -> Result<OpenResult, String> {
-    logins::open_site(&state.vault, &state.sessions, id).await
+    // Copied out so the lock isn't held while the login runs.
+    let chosen = state.settings.lock().map_err(|_| "the settings are unavailable")?.clone();
+    let browser = settings::browser_path(&chosen)?;
+    logins::open_site(&state.vault, &state.sessions, browser, id).await
 }
 
 /// The "Open windows" panel's rows.
@@ -155,6 +169,51 @@ async fn release_window(state: State<'_, AppState>, id: i64) -> Result<(), Strin
 #[tauri::command]
 async fn close_window(state: State<'_, AppState>, id: i64) -> Result<(), String> {
     state.sessions.close(id).await
+}
+
+#[derive(Serialize)]
+struct SettingsView {
+    settings: settings::Settings,
+    /// The browsers found on this PC, for the dropdown.
+    browsers: Vec<settings::BrowserInfo>,
+    /// This copy's version, and whether it can update itself (known
+    /// without asking GitHub).
+    version: String,
+    can_update: bool,
+}
+
+#[tauri::command]
+fn get_settings(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<SettingsView, String> {
+    let settings = state.settings.lock().map_err(|_| "the settings are unavailable")?.clone();
+    Ok(SettingsView {
+        settings,
+        browsers: settings::installed_browsers(),
+        version: app.package_info().version.to_string(),
+        can_update: updates::can_update(&app),
+    })
+}
+
+/// Saves the settings. Windows that are already open keep their browser;
+/// the next Open uses the new one.
+#[tauri::command]
+fn save_settings(state: State<'_, AppState>, settings: settings::Settings) -> Result<settings::Settings, String> {
+    let saved = settings::save(state.settings_path.as_deref(), settings)?;
+    *state.settings.lock().map_err(|_| "the settings are unavailable")? = saved.clone();
+    Ok(saved)
+}
+
+/// Settings > Updates: this version, and a newer one if GitHub has it.
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Result<updates::UpdateStatus, String> {
+    updates::check(&app).await
+}
+
+/// Downloads and installs the newer version. Progress arrives as
+/// `update-progress` events. On success the app exits and the installer
+/// starts it again, so this only resolves with an error.
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    updates::install(&app, &state.sessions).await
 }
 
 /// The log file: `%LOCALAPPDATA%\NetLaunch\logs\netlaunch.log`. When it
@@ -244,11 +303,23 @@ fn main() -> std::process::ExitCode {
     let (vault, path) = open_vault();
     let vault = SharedVault(Arc::new(Mutex::new(vault)));
 
+    let settings_path = settings::default_path();
+    let loaded = settings_path.as_deref().map(settings::load).unwrap_or_default();
+
     let app = tauri::Builder::default()
+        // Used from Rust only (updates.rs); the window has no permission
+        // to call it.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // The sessions send events, so they're made once the app exists.
         .setup(move |app| {
             let hooks = logins::TauriHooks { app: app.handle().clone(), vault: vault.clone() };
-            app.manage(AppState { vault, path, sessions: logins::new_sessions(hooks) });
+            app.manage(AppState {
+                vault,
+                path,
+                sessions: logins::new_sessions(hooks),
+                settings: Mutex::new(loaded),
+                settings_path,
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -262,7 +333,11 @@ fn main() -> std::process::ExitCode {
             open_site,
             list_sessions,
             release_window,
-            close_window
+            close_window,
+            get_settings,
+            save_settings,
+            check_update,
+            install_update
         ])
         .build(tauri::generate_context!())
         .expect("error while building NetLaunch");

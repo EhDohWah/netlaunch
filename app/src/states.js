@@ -2,7 +2,7 @@
 // by the site list and the Open windows panel.
 
 export const STATE_LABELS = {
-  launching: 'Starting Edge…',
+  launching: 'Starting the browser…',
   loading: 'Opening the login page…',
   filling: 'Filling in the login form…',
   waiting: 'Waiting for the site to answer…',

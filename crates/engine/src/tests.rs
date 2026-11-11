@@ -216,6 +216,56 @@ async fn form_that_never_appears_times_out() {
 }
 
 /// A tab where loading the page fails with `error`.
+/// A device that only asks for a password (a Ruijie access point): no
+/// username is typed, Enter submits, and the password field going away
+/// is the sign of success, because the address doesn't change.
+#[tokio::test]
+async fn password_only_recipe_types_just_the_password() {
+    let driver = FakeDriver::default();
+    driver.on_goto(|page, _| page.visible = [PASS.to_string()].into());
+    driver.on_click(|page, _| page.visible.clear());
+    let mut recipe = builtin("password-only").unwrap();
+    recipe.timeout_ms = 3000;
+
+    let (outcome, asked, _) = login(&driver, &recipe).await;
+
+    assert_eq!(outcome, Outcome::LoggedIn);
+    assert_eq!(asked, 1);
+    assert_eq!(driver.fills(), vec![(PASS.to_string(), PASSWORD.to_string())]);
+    assert_eq!(driver.presses(), vec![(PASS.to_string(), "Enter".to_string())]);
+}
+
+#[tokio::test]
+async fn password_only_recipe_notices_a_rejected_password() {
+    let driver = FakeDriver::default();
+    driver.on_goto(|page, _| page.visible = [PASS.to_string()].into());
+    // The form stays and an error appears.
+    driver.on_click(|page, _| {
+        page.visible.insert(ALERT.to_string());
+    });
+    let mut recipe = builtin("password-only").unwrap();
+    recipe.timeout_ms = 3000;
+
+    let (outcome, _, _) = login(&driver, &recipe).await;
+    assert!(matches!(outcome, Outcome::Rejected { .. }), "{outcome:?}");
+}
+
+/// The field is gone, but the browser has left the site: not a success.
+#[tokio::test]
+async fn a_gone_field_on_another_origin_is_not_success() {
+    let driver = FakeDriver::default();
+    driver.on_goto(|page, _| page.visible = [PASS.to_string()].into());
+    driver.on_click(|page, _| {
+        page.visible.clear();
+        page.url = "https://elsewhere.example/".into();
+    });
+    let mut recipe = builtin("password-only").unwrap();
+    recipe.timeout_ms = 1500;
+
+    let (outcome, _, _) = login(&driver, &recipe).await;
+    assert!(matches!(outcome, Outcome::TimedOut { .. }), "{outcome:?}");
+}
+
 fn failing_goto(error: &str) -> FakeDriver {
     let driver = FakeDriver::default();
     driver.fail_goto_with(DriverError::Other(error.to_string()));

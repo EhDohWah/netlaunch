@@ -283,9 +283,9 @@ fn validate(name: &str, login_url: &str, username: &str, recipe_id: &str) -> Res
     if name.trim().is_empty() {
         return Err(VaultError::InvalidInput("name is empty".into()));
     }
-    if username.is_empty() {
-        return Err(VaultError::InvalidInput("username is empty".into()));
-    }
+    // An empty username is allowed: some devices only ask for a password.
+    // The app checks it against the site's recipe (sites.rs).
+    let _ = username;
     if recipe_id.trim().is_empty() {
         return Err(VaultError::InvalidInput("recipe is empty".into()));
     }

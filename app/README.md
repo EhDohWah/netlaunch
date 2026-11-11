@@ -3,19 +3,23 @@
 The desktop app: a Tauri 2 window with a Vue 3 + Vite frontend, wired to the vault (`crates/vault`) and the login engine (`crates/engine`, `crates/driver-pw`).
 
 - `src/`: the Vue frontend.
-  - `App.vue` switches between the site list and the form.
-  - `components/SiteList.vue` and `components/SiteForm.vue` are the two screens.
+  - `App.vue` is the sidebar and its three pages (Dashboard, Group List, Settings), and shows the form over them.
+  - `components/SiteList.vue` (flat on the Dashboard, grouped on Group List), `components/SiteForm.vue` and `components/SettingsPage.vue` are the screens.
   - `api.js` calls the Rust commands.
 - `src-tauri/`: the Rust side (crate `netlaunch-app`, binary `netlaunch`).
   - `main.rs` holds the commands.
   - `sites.rs` holds the site-list logic and tests.
+  - `settings.rs` reads and writes `settings.json` (browser choice, update check).
+  - `updates.rs` checks for, downloads and installs a newer release.
   - `logins.rs` builds what Open needs from the vault and passes the open windows' news on (events for the panel, results for `login_log`). The windows themselves live in `crates/sessions`.
 - `src/components/SessionPanel.vue` is the "Open windows" panel.
   - `capabilities/default.json` grants only Tauri's core defaults.
 
 ## Install it (M7)
 
-CI builds the installer on every push to `main`, with the MSVC toolchain.
+Once there is a release (see "Releasing" below), download `NetLaunch_<version>_x64-setup.exe` from the repository's **Releases** page and run it. From then on NetLaunch updates itself: **Settings > Updates**.
+
+CI also builds an installer on every push to `main`, with the MSVC toolchain. That copy is for testing a change before it's released, and it can't update itself:
 
 1. Open the repository's **Actions** tab, and click the latest green **CI** run.
 2. Under **Artifacts**, download **netlaunch-installer**, and unzip it.
@@ -43,6 +47,40 @@ It ends up in `target\release\bundle\nsis\`.
 It should end with `OK`, and its first line should name the bundled `playwright-driver` folder.
 
 **Log file:** `%LOCALAPPDATA%\NetLaunch\logs\netlaunch.log`. It records what NetLaunch did (steps, selectors, outcomes), never what it typed.
+
+## Releasing
+
+A release is what installed copies of NetLaunch update to.
+
+**One-time setup: the signing key.** The app only installs an update signed with your key, so nobody else can push one to it.
+
+1. Make the key pair on your PC (press Enter twice for no password, or choose one):
+
+   ```powershell
+   cd app
+   ```
+
+   ```powershell
+   npx tauri signer generate -w "$env:USERPROFILE\.tauri\netlaunch.key"
+   ```
+
+   This writes two files: `netlaunch.key` (private: keep it safe, never commit it) and `netlaunch.key.pub` (public).
+2. On GitHub: the repository's **Settings > Secrets and variables > Actions**.
+   - **Secrets** tab, "New repository secret": `TAURI_SIGNING_PRIVATE_KEY`, with the whole contents of `netlaunch.key`. If you chose a password, add `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` too.
+   - **Variables** tab, "New repository variable": `TAURI_UPDATER_PUBKEY`, with the whole contents of `netlaunch.key.pub`.
+3. Keep a copy of `netlaunch.key` somewhere safe. If it's lost, installed copies can't be updated any more; they'd need a manual install of a build made with a new key.
+
+**Each release:**
+
+1. Make sure the latest **CI** run on `main` is green.
+2. **Actions > Release > Run workflow**. Type the version (such as `0.2.0`; it must be higher than the last one) and, if you like, a line about what's new.
+3. About 15 minutes later the release is on the **Releases** page, with the installer and `latest.json`.
+
+Installed copies then show "NetLaunch 0.2.0 is available" on the Dashboard, and **Settings > Updates > Install and restart** installs it. Your sites and settings stay.
+
+- Versions like `0.2.0` are fine while testing; nothing needs to be called stable. Don't tick "pre-release" on GitHub, though: the app only sees the latest full release.
+- The copy you have now (0.1.0, from CI) has no updater. Install the first release by hand, once.
+- Pushing a tag (`git tag v0.2.0`, then `git push origin v0.2.0`) starts the same workflow.
 
 ## Run it on Windows (development)
 
@@ -145,6 +183,13 @@ Keep the mock site running, and use the sites from the M5 check.
 
 **Every attempt is recorded** in the vault's `login_log` table with its outcome and message, never the password.
 
+## Check by hand: sidebar, settings, updates
+
+1. **Pages.** The sidebar shows Dashboard, Group List and Settings. Group List folds each group and renames one; the sites keep their passwords.
+2. **Password only.** Add the mock site's `https://localhost:8443/password-only/login` with **Login page type: Password only** (the username field disappears) and the test password. Open logs in.
+3. **Browser.** Settings > Browser: pick Chrome (if installed), Save, then Open a site: it opens in Chrome. Switch back to Edge.
+4. **Updates** (needs two releases, see "Releasing"): with release A installed, publish release B. Start NetLaunch: the Dashboard says B is available. Settings > Updates > Install and restart: the download counts up, NetLaunch closes and comes back as B, with the same sites.
+
 ## Commands
 
 | Command | Input | Returns |
@@ -154,15 +199,20 @@ Keep the mock site running, and use the sites from the M5 check.
 | `add_site` | `{ site }`, password required | the saved `Site` |
 | `update_site` | `{ id, site }`, empty or null password keeps the stored one | the saved `Site` |
 | `delete_site` | `{ id }` | nothing |
-| `list_recipes` | none | `{ id, name }[]`, the built-in recipes |
+| `list_recipes` | none | `{ id, name, needs_username }[]`, the built-in recipes |
 | `open_site` | `{ id }` | `{ outcome, message, warnings, fix }`, when the login has finished. `outcome` is `success`, `mfa_handoff`, `failed`, `timeout` or `origin_mismatch`. `fix` is `"trust_certificate"` when Edge rejected the site's certificate, else null |
 | `trust_certificate` | `{ id }` | the saved `Site`, with its self-signed setting ticked |
 | `list_sessions` | none | `SessionView[]`: `{ site_id, site_name, state, message, warnings, window_mode }` |
 | `release_window` | `{ id }` | nothing; the window is handed over |
 | `close_window` | `{ id }` | nothing; the window is closed |
+| `get_settings` | none | `{ settings, browsers, version, can_update }`; `settings` is `{ browser, browser_path, check_updates }`, `browsers` the ones found on this PC |
+| `save_settings` | `{ settings }` | the saved settings; fails if the chosen browser isn't there |
+| `check_update` | none | `{ current, can_update, available }`; `available` is `{ version, notes }` or null |
+| `install_update` | none | only an error: on success the app restarts |
 
 Events:
 - `session-changed`: a `SessionView`, whenever a window's state changes. `state` is `launching`, `loading`, `filling`, `waiting` (the login running), then `waiting_for_2fa`, `logged_in`, `handed_over`, `failed` or `stopped`.
 - `session-ended`: `{ site_id, why }`, where `why` is `closed`, `released`, `window_closed` or `no_window`.
+- `update-progress`: `{ downloaded, total }` in bytes, while an update downloads.
 
 On Windows the vault key is protected with DPAPI. On other systems the app builds and starts, but shows "NetLaunch runs on Windows only".

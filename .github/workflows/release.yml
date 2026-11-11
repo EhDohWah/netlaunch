@@ -1,0 +1,118 @@
+name: Release
+
+# Builds the signed installer and publishes it as a GitHub release. Copies
+# of NetLaunch that came from a release then find it under Settings >
+# Updates.
+#
+# Run it from the Actions tab (Release > Run workflow, type the version),
+# or push a tag such as v0.2.0.
+#
+# One-time setup (Settings > Secrets and variables > Actions); the steps
+# are in app/README.md:
+#   secret    TAURI_SIGNING_PRIVATE_KEY           the private key file's contents
+#   secret    TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password (leave out if none)
+#   variable  TAURI_UPDATER_PUBKEY                the .pub file's contents
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, such as 0.2.0. Must be higher than the last release."
+        required: true
+      notes:
+        description: "What's new (shown in the app). Optional."
+        required: false
+
+permissions:
+  # To create the release and its tag.
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    runs-on: windows-latest
+    env:
+      PLAYWRIGHT_DRIVER_CACHE_DIR: ${{ github.workspace }}/.playwright-driver
+    steps:
+      - uses: actions/checkout@v4
+      - name: Work out the version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+        run: |
+          # From the "Run workflow" box, or from the tag (v0.2.0 -> 0.2.0).
+          $version = if ($env:INPUT_VERSION) { $env:INPUT_VERSION } else { $env:GITHUB_REF_NAME }
+          $version = $version.Trim().TrimStart('v')
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "'$version' isn't a version like 0.2.0" }
+          if ($env:HAS_KEY -ne 'true') { throw 'The TAURI_SIGNING_PRIVATE_KEY secret is missing. See "Releasing" in app/README.md.' }
+          if (-not $env:PUBKEY) { throw 'The TAURI_UPDATER_PUBKEY variable is missing. See "Releasing" in app/README.md.' }
+          "VERSION=$version" >> $env:GITHUB_ENV
+
+          # Settings for this build only: the version, the public key the
+          # app checks updates against, and "also make the signature file".
+          @{
+            version = $version
+            bundle  = @{ createUpdaterArtifacts = $true }
+            plugins = @{ updater = @{ pubkey = $env:PUBKEY.Trim() } }
+          } | ConvertTo-Json -Depth 5 | Set-Content app/src-tauri/tauri.release.conf.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: installer
+      - name: Cache the Playwright driver
+        uses: actions/cache@v4
+        with:
+          path: .playwright-driver
+          key: playwright-driver-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: playwright-driver-${{ runner.os }}-
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Assemble the Playwright driver
+        run: cargo build -p netlaunch-driver-pw
+      - name: Install npm packages
+        working-directory: app
+        run: npm ci
+      - name: Build and sign the installer
+        working-directory: app
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run installer -- --config src-tauri/tauri.release.conf.json
+      - name: Publish the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          $setup = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          $sig = "$($setup.FullName).sig"
+          if (-not (Test-Path $sig)) { throw "The installer wasn't signed: $sig is missing." }
+
+          # What the app reads to learn about this version.
+          $tag = "v$env:VERSION"
+          @{
+            version   = $env:VERSION
+            notes     = "$env:NOTES"
+            pub_date  = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            platforms = @{
+              'windows-x86_64' = @{
+                signature = (Get-Content $sig -Raw).Trim()
+                url       = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/$($setup.Name)"
+              }
+            }
+          } | ConvertTo-Json -Depth 5 | Set-Content latest.json
+          Get-Content latest.json
+
+          $options = @('--title', "NetLaunch $env:VERSION", '--target', $env:GITHUB_SHA)
+          if ($env:NOTES) { $options += @('--notes', $env:NOTES) } else { $options += '--generate-notes' }
+          gh release create $tag $setup.FullName latest.json @options
+          if ($LASTEXITCODE -ne 0) { throw 'gh release create failed' }

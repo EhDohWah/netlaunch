@@ -122,6 +122,12 @@ pub enum Rule {
     Text(String),
     UrlContains(String),
     UrlNotContains(String),
+    /// No visible element matches this CSS selector, and the page is on
+    /// the site's own origin. For devices whose address doesn't change on
+    /// login: "the password field is gone" means the site let you in.
+    /// It has to hold twice, a second apart, so a page that is only
+    /// reloading (after a wrong password, say) doesn't count.
+    SelectorGone(String),
 }
 
 impl std::fmt::Display for Rule {
@@ -132,6 +138,7 @@ impl std::fmt::Display for Rule {
             Rule::Text(t) => write!(f, "text \"{t}\""),
             Rule::UrlContains(u) => write!(f, "URL contains \"{u}\""),
             Rule::UrlNotContains(u) => write!(f, "URL doesn't contain \"{u}\""),
+            Rule::SelectorGone(s) => write!(f, "`{s}` is gone"),
         }
     }
 }
@@ -142,6 +149,12 @@ impl Recipe {
         let recipe: Recipe = serde_json::from_str(json).map_err(|e| format!("recipe JSON: {e}"))?;
         recipe.validate()?;
         Ok(recipe)
+    }
+
+    /// True if a step types the username. A recipe that doesn't (a device
+    /// that only asks for a password) lets a site be saved without one.
+    pub fn needs_username(&self) -> bool {
+        self.steps.iter().any(|s| matches!(s, Step::Fill { value: FillValue::Username, .. }))
     }
 
     /// Checks what the JSON types alone can't.
@@ -180,6 +193,7 @@ impl Recipe {
 const BUILTIN: &[(&str, &str)] = &[
     ("generic-form", include_str!("../recipes/generic-form.json")),
     ("two-step-form", include_str!("../recipes/two-step-form.json")),
+    ("password-only", include_str!("../recipes/password-only.json")),
 ];
 
 /// The built-in recipe with this id.
@@ -190,13 +204,9 @@ pub fn builtin(id: &str) -> Option<Recipe> {
     Some(Recipe::from_json(json).expect("built-in recipe is valid"))
 }
 
-/// Every built-in recipe as (id, name), for the recipe dropdown.
-pub fn builtin_list() -> Vec<(String, String)> {
-    BUILTIN
-        .iter()
-        .filter_map(|(id, _)| builtin(id))
-        .map(|r| (r.id, r.name))
-        .collect()
+/// Every built-in recipe, for the recipe dropdown.
+pub fn builtin_list() -> Vec<Recipe> {
+    BUILTIN.iter().filter_map(|(id, _)| builtin(id)).collect()
 }
 
 #[cfg(test)]
@@ -219,6 +229,16 @@ mod tests {
         assert!(recipe.steps.iter().any(|s| matches!(s, Step::Fill { value: FillValue::Password, .. })));
         assert_eq!(recipe.success.any, vec![Rule::UrlNotContains("/login".into())]);
         assert_eq!(recipe.failure.any, vec![Rule::Selector("[role=alert]".into())]);
+    }
+
+    #[test]
+    fn password_only_types_no_username() {
+        let recipe = builtin("password-only").unwrap();
+        assert!(!recipe.needs_username());
+        assert!(recipe.steps.iter().any(|s| matches!(s, Step::Fill { value: FillValue::Password, .. })));
+        assert_eq!(recipe.success.any, vec![Rule::SelectorGone("input[type=password]".into())]);
+        assert!(builtin("generic-form").unwrap().needs_username());
+        assert!(builtin("two-step-form").unwrap().needs_username());
     }
 
     #[test]

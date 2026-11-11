@@ -22,11 +22,11 @@ export const updateSite = (id, site) => invoke('update_site', { id, site });
 
 export const deleteSite = (id) => invoke('delete_site', { id });
 
-/** @returns {Promise<{id: string, name: string}[]>} the built-in login recipes */
+/** @returns {Promise<{id: string, name: string, needs_username: boolean}[]>} the built-in login recipes */
 export const listRecipes = () => invoke('list_recipes');
 
 /**
- * Launches Edge and logs in to the site. Resolves when the login has
+ * Launches the browser and logs in to the site. Resolves when the login has
  * finished, one way or another: `{ outcome, message, warnings, fix }`,
  * where `outcome` is one of
  * success | mfa_handoff | failed | timeout | origin_mismatch.
@@ -61,3 +61,29 @@ export const onSessionEnded = (handler) => listen('session-ended', (event) => ha
  */
 export const trustCertificate = (id) => invoke('trust_certificate', { id });
 
+
+/**
+ * Settings and the browsers found on this PC:
+ * `{ settings: { browser, browser_path, check_updates }, browsers: [{ id, name, path }], version, can_update }`.
+ * `browser` is edge | chrome | custom.
+ */
+export const getSettings = () => invoke('get_settings');
+
+/** Saves the settings; rejects with a message if the browser isn't there. */
+export const saveSettings = (settings) => invoke('save_settings', { settings });
+
+/**
+ * Asks GitHub for a newer release:
+ * `{ current, can_update, available: { version, notes } | null }`.
+ * `can_update` is false for development builds.
+ */
+export const checkUpdate = () => invoke('check_update');
+
+/**
+ * Downloads and installs the newer version. The app then restarts, so
+ * this only settles when something went wrong.
+ */
+export const installUpdate = () => invoke('install_update');
+
+/** Calls `handler({ downloaded, total })` (bytes) while an update downloads. */
+export const onUpdateProgress = (handler) => listen('update-progress', (event) => handler(event.payload));

@@ -37,6 +37,7 @@ Open `https://localhost:8443/` in Edge. The index lists every scenario. Sign in 
 | `/redirect-away` | Open it | The address changes to `https://localhost:8444/...`, and the header says "(lookalike, different port)" |
 | | Type in a field, then go back to the index | Input events: 1 or more. Use **Reset counters** afterwards. NetLaunch must leave these at 0. |
 | `/no-success` | Sign in | "You are signed in, but this page never shows the success marker", at `/no-success/login/signed-in` |
+| `/password-only` | Add it with the **Password only** login page type and the test password; Open | Logged in. No username is typed, Enter submits, and the address stays `/password-only/login` |
 
 ## Tests
 

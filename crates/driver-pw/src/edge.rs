@@ -10,15 +10,45 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-/// Locates the installed `msedge.exe`: the `App Paths` registry key
-/// (machine, then user), then the standard install folders. `None` on
-/// other systems.
-pub fn find_edge() -> Option<PathBuf> {
+/// The browsers NetLaunch can find by itself. Both are Chromium-based:
+/// NetLaunch drives the window over the DevTools protocol, which Firefox
+/// doesn't offer in a way playwright-rs can attach to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrowserKind {
+    Edge,
+    Chrome,
+}
+
+impl BrowserKind {
+    pub const ALL: [BrowserKind; 2] = [BrowserKind::Edge, BrowserKind::Chrome];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            BrowserKind::Edge => "Microsoft Edge",
+            BrowserKind::Chrome => "Google Chrome",
+        }
+    }
+
+    /// (exe name, install folder under Program Files or LOCALAPPDATA).
+    #[cfg(windows)]
+    fn install(self) -> (&'static str, [&'static str; 3]) {
+        match self {
+            BrowserKind::Edge => ("msedge.exe", ["Microsoft", "Edge", "Application"]),
+            BrowserKind::Chrome => ("chrome.exe", ["Google", "Chrome", "Application"]),
+        }
+    }
+}
+
+/// Locates an installed browser: the `App Paths` registry key (machine,
+/// then user), then the standard install folders. `None` when it isn't
+/// installed, and always on other systems.
+pub fn find_browser(kind: BrowserKind) -> Option<PathBuf> {
     #[cfg(windows)]
     {
-        const APP_PATHS: &str = r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe";
+        let (exe, folders) = kind.install();
+        let app_paths = format!(r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe}");
         for root in [windows_registry::LOCAL_MACHINE, windows_registry::CURRENT_USER] {
-            if let Ok(key) = root.open(APP_PATHS)
+            if let Ok(key) = root.open(&app_paths)
                 && let Ok(value) = key.get_string("")
             {
                 let path = PathBuf::from(value.trim_matches('"'));
@@ -28,7 +58,7 @@ pub fn find_edge() -> Option<PathBuf> {
             }
         }
 
-        let suffix = Path::new("Microsoft").join("Edge").join("Application").join("msedge.exe");
+        let suffix: PathBuf = folders.iter().collect::<PathBuf>().join(exe);
         for var in ["ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA"] {
             if let Some(base) = std::env::var_os(var) {
                 let path = PathBuf::from(base).join(&suffix);
@@ -42,8 +72,14 @@ pub fn find_edge() -> Option<PathBuf> {
 
     #[cfg(not(windows))]
     {
+        let _ = kind;
         None
     }
+}
+
+/// Locates the installed `msedge.exe`.
+pub fn find_edge() -> Option<PathBuf> {
+    find_browser(BrowserKind::Edge)
 }
 
 /// Switches that keep the login window apart from the admin's own Edge.
@@ -63,7 +99,8 @@ pub fn isolation_args() -> Vec<String> {
         "--disable-extensions",
         "--disable-component-extensions-with-background-pages",
         "--disable-default-apps",
-        // Edge-only: don't force a sign-in on the new profile, and don't
+        // Edge-only (Chrome ignores switches and features it doesn't
+        // know): don't force a sign-in on the new profile, and don't
         // move intranet URLs (such as 10.x consoles) into the admin's
         // "Work" profile window, away from the automated one.
         "--disable-features=msForceBrowserSignIn,SwitchIntranetSitesToWorkProfile",
@@ -152,14 +189,14 @@ pub async fn wait_for_debug_port(profile_dir: &Path, child: &mut Child, timeout:
         // profile folder, then exits at once. That happens when a persistent
         // profile is still open in a released window.
         if let Ok(Some(_)) = child.try_wait() {
-            return Err("Edge exited straight away. If this site's window is still open from an earlier \
+            return Err("The browser exited straight away. If this site's window is still open from an earlier \
                         launch, close it and try again."
                 .into());
         }
         if Instant::now() >= deadline {
             return Err(format!(
-                "Edge didn't finish starting within {} s. If this keeps happening, remote debugging may \
-                 be blocked by policy: check edge://policy for RemoteDebuggingAllowed.",
+                "The browser didn't finish starting within {} s. If this keeps happening, remote debugging \
+                 may be blocked by policy: check edge://policy (or chrome://policy) for RemoteDebuggingAllowed.",
                 timeout.as_secs()
             ));
         }

@@ -28,9 +28,11 @@ netlaunch-driver-pw = { path = "../../crates/driver-pw" }
 netlaunch-sessions = { path = "../../crates/sessions" }
 tracing.workspace = true
 tracing-subscriber.workspace = true
+# In-app updates, called from Rust only (src/updates.rs).
+tauri-plugin-updater = "2"
+serde_json.workspace = true
 
 [dev-dependencies]
 # Tests only: open a vault without DPAPI.
 netlaunch-vault = { path = "../../crates/vault", features = ["insecure-test-protector"] }
-serde_json.workspace = true
 tokio.workspace = true

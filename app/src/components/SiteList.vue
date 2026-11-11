@@ -1,7 +1,10 @@
 <script setup>
-// The home screen: sites grouped by group name, a search box, and
-// Open / Edit / Delete per site, with each site's login status under it.
-import { computed, ref } from 'vue';
+// The sites, with a search box and Open / Edit / Delete per site, and each
+// site's login status under it. Two layouts:
+// - flat (Dashboard): one list, the group shown as a tag;
+// - grouped (Group List): a section per group that can be folded and
+//   renamed.
+import { computed, reactive, ref } from 'vue';
 import { STATE_LABELS, stateKind } from '../states.js';
 
 const props = defineProps({
@@ -10,8 +13,9 @@ const props = defineProps({
   logins: { type: Object, required: true },
   // Open windows per site id (SessionView), from App.vue.
   sessions: { type: Object, required: true },
+  grouped: { type: Boolean, default: false },
 });
-const emit = defineEmits(['add', 'open', 'trust', 'edit', 'delete']);
+const emit = defineEmits(['add', 'open', 'trust', 'edit', 'delete', 'rename-group']);
 
 // Short labels in front of the engine's message.
 const OUTCOMES = {
@@ -41,6 +45,10 @@ const search = ref('');
 // The id of the site whose Delete button was clicked once and is waiting
 // for confirmation.
 const confirming = ref(null);
+// Group names that are folded shut.
+const folded = reactive({});
+// The group being renamed: { from, to }.
+const renaming = ref(null);
 
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase();
@@ -53,9 +61,10 @@ const filtered = computed(() => {
 // The vault already sorts by group, then name, with ungrouped sites last,
 // so grouping only has to split the list where the group changes.
 const groups = computed(() => {
+  if (!props.grouped) return filtered.value.length ? [{ name: null, sites: filtered.value }] : [];
   const result = [];
   for (const site of filtered.value) {
-    const name = site.group_name || 'Ungrouped';
+    const name = site.group_name || '';
     if (!result.length || result[result.length - 1].name !== name) result.push({ name, sites: [] });
     result[result.length - 1].sites.push(site);
   }
@@ -69,6 +78,12 @@ function lastUsed(site) {
 function confirmDelete(site) {
   confirming.value = null;
   emit('delete', site);
+}
+
+function finishRename() {
+  const { from, to } = renaming.value;
+  renaming.value = null;
+  if (to.trim() && to.trim() !== from) emit('rename-group', from, to.trim());
 }
 </script>
 
@@ -84,15 +99,32 @@ function confirmDelete(site) {
 
     <p v-if="!groups.length" class="muted">No sites match “{{ search }}”.</p>
 
-    <section v-for="group in groups" :key="group.name" class="group">
-      <h2>{{ group.name }}</h2>
-      <ul class="sites">
+    <section v-for="group in groups" :key="group.name ?? 'all'" class="group">
+      <div v-if="grouped" class="group-head">
+        <form v-if="renaming?.from === group.name" class="rename" @submit.prevent="finishRename">
+          <input v-model="renaming.to" aria-label="New group name" required />
+          <button type="submit" class="primary">Rename</button>
+          <button type="button" @click="renaming = null">Cancel</button>
+        </form>
+        <template v-else>
+          <button class="fold" :aria-expanded="!folded[group.name]" @click="folded[group.name] = !folded[group.name]">
+            <span aria-hidden="true">{{ folded[group.name] ? '▸' : '▾' }}</span>
+            {{ group.name || 'Ungrouped' }}
+            <span class="count">{{ group.sites.length }}</span>
+          </button>
+          <button v-if="group.name" class="link" @click="renaming = { from: group.name, to: group.name }">Rename</button>
+        </template>
+      </div>
+      <ul v-if="!grouped || !folded[group.name]" class="sites">
         <li v-for="site in group.sites" :key="site.id" class="site">
           <div class="site-main">
-            <div class="site-name">{{ site.name }}</div>
+            <div class="site-name">
+              {{ site.name }}
+              <span v-if="!grouped && site.group_name" class="tag">{{ site.group_name }}</span>
+            </div>
             <div class="muted small">{{ site.login_url }}</div>
             <div class="muted small">
-              {{ site.username }} · last used {{ lastUsed(site) }}
+              {{ site.username || 'password only' }} · last used {{ lastUsed(site) }}
               <span v-if="site.allow_self_signed" class="tag" title="Certificate errors are ignored for this site">self-signed</span>
               <span v-if="site.window_mode === 'released'" class="tag" title="The window is handed over after login">released</span>
             </div>
@@ -116,7 +148,7 @@ function confirmDelete(site) {
               <button
                 class="primary"
                 :disabled="logins[site.id]?.busy || !!sessions[site.id]"
-                :title="sessions[site.id] ? 'Already open: see Open windows' : ''"
+                :title="sessions[site.id] ? 'Already open: see Open windows on the Dashboard' : ''"
                 @click="emit('open', site)"
               >
                 {{ logins[site.id]?.busy ? 'Opening…' : 'Open' }}

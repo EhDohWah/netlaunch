@@ -56,6 +56,10 @@ function isPrivateHttps(raw) {
   return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
 }
 
+// Some devices (access points) only ask for a password. Their recipe
+// types no username, so the field is hidden and nothing is saved for it.
+const needsUsername = computed(() => props.recipes.find((r) => r.id === fields.recipe_id)?.needs_username !== false);
+
 // Kept apart from `fields` so it's easy to clear after every save attempt.
 const password = ref('');
 
@@ -68,6 +72,7 @@ async function submit() {
   try {
     await props.save({
       ...fields,
+      username: needsUsername.value ? fields.username : '',
       group_name: fields.group_name.trim() || null,
       notes: fields.notes.trim() || null,
       // Empty when editing means "keep the stored password".
@@ -108,6 +113,14 @@ async function submit() {
     </label>
 
     <label>
+      Login page type
+      <select v-model="fields.recipe_id">
+        <option v-for="r in recipes" :key="r.id" :value="r.id">{{ r.name }}</option>
+      </select>
+      <span class="muted small">Generic: a username and password on one page. Two-step: the password is asked on a second page. Password only: the device asks for no username.</span>
+    </label>
+
+    <label v-if="needsUsername">
       Username
       <input v-model="fields.username" required autocomplete="off" spellcheck="false" />
     </label>
@@ -124,14 +137,6 @@ async function submit() {
         :placeholder="editing ? 'Leave empty to keep the stored password' : ''"
       />
       <span class="muted small">Encrypted on this PC. NetLaunch never shows it again.</span>
-    </label>
-
-    <label>
-      Login recipe
-      <select v-model="fields.recipe_id">
-        <option v-for="r in recipes" :key="r.id" :value="r.id">{{ r.name }}</option>
-      </select>
-      <span class="muted small">Generic works for a username and password on one page. Use two-step when the password is asked on a second page.</span>
     </label>
 
     <fieldset>

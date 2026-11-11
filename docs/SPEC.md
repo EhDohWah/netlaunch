@@ -172,6 +172,7 @@ Passwords are encrypted per field with a random data key. That key is protected 
   - `playwright_rs` is capped at `debug`, because at `trace` it logs filled text.
   - A test fills a known password and checks the log output doesn't contain it.
 - **Minimal Tauri capabilities:** no general shell or filesystem access from the frontend.
+- **Updates are signed.** The app installs a newer version only when its signature matches the public key built into the running copy (see "Updates"). The updater is called from Rust; the window gets no updater permission.
 - **Credentials are typed in by hand.** Nothing is bulk-imported from the knowledge base PDF, and those exposed passwords should be rotated.
 - **Known limit:** `secrecy` wipes the app's own copy of the password, but the JSON message to the driver holds it briefly and can't be wiped.
 
@@ -254,7 +255,8 @@ Each login is a small JSON recipe: ordered steps, plus rules that say what "logg
   - `click` may name a fallback field, `else_press_enter_in`. If no visible element matches the button selector, the engine presses Enter in that field instead. The owner's UniFi controller and Huawei switch both have login buttons that aren't `type=submit`.
   - Every action uses the **first visible** element that matches. Generic selectors can match several inputs, and hidden decoy fields are skipped.
 - **Placeholders:** only `{username}` and `{password}`, each as the whole value. The password is substituted inside the Rust engine at fill time and is never written into the recipe or logs. Any other `{...}` is rejected when the recipe loads.
-- **Detection rules:** `selector`, `text` (visible text contains, ignoring case), `url_contains`, `url_not_contains`.
+- **Detection rules:** `selector`, `text` (visible text contains, ignoring case), `url_contains`, `url_not_contains`, `selector_gone`.
+  - **`selector_gone`** matches when no visible element matches the selector and the page is on the site's own origin. It must hold twice, one second apart, so a page that is only reloading (after a wrong password) doesn't count. It's for devices whose address doesn't change on login.
   - After the last step, the engine checks the page every 250 ms until a rule matches or `timeout_ms` runs out. It checks `success` first, then `mfa`, then `failure`: a dashboard may have an alert banner, and a 2FA page may mention an error.
   - **URL rules only count on the site's own origin.** Otherwise "the URL no longer contains `/login`" would also be true of a browser error page, or of a redirect to another site.
   - **`failure` (added in M5)** says the site rejected the login. A failure rule that already matched before the last step (a banner that's always on the login page) is ignored afterwards.
@@ -263,20 +265,44 @@ Each login is a small JSON recipe: ordered steps, plus rules that say what "logg
 - **Built-in recipes** are JSON files in `crates/engine/recipes/`, compiled into the app. They're checked when they load, and a site can only be saved with a recipe that exists.
   - `generic-form`: one page with username and password.
   - `two-step-form`: username, Next, then the password on a second page.
+  - `password-only`: for devices that ask for no username (the owner's Ruijie RAP2260(H) access point). It fills the password and presses Enter; success is "the password field is gone" (`selector_gone`).
+    - A site with this recipe is saved with an empty username, and the form hides the field. The other recipes still require one (checked in `sites.rs`; the vault itself allows an empty username).
+    - Known limit: the recipe has no 2FA rule, and a 2FA page would also have no password field, so it would be reported as logged in. Such a device needs its own recipe.
 - **Per-site recipes to write later** (selectors must be read from each real login page, not guessed): UniFi, Proxmox VE, Proxmox Backup Server, Synology DSM, iDRAC, Huawei switch web UI, Ruckus Unleashed.
 
 ## User interface
 
-Four screens in the Tauri window, built with Vue 3 + Vite (pending confirmation, decision 7).
+A sidebar with three pages, in the Tauri window, built with Vue 3 + Vite (decision 7). The add/edit form opens over the page it was started from.
 
-| Screen | What it shows | Actions |
+| Page | What it shows | Actions |
 |---|---|---|
-| Site list (home) | Sites grouped by `group_name`, search box, last-used time | Open, Edit, Delete |
-| Add / edit site | Name, group, login URL, username, password (write-only), recipe, self-signed toggle, profile mode, window mode | Save, Test login |
-| Session panel | Live status per open site: Launching, Filling, Waiting for 2FA, Logged in, Failed. A warning when the window is signed in to the Windows account (decision 9) | Release window, Close window, Retry |
-| Settings | Browser path (Edge), data folder, idle lock (if master password is on) | Change, Export site list (no passwords) |
+| Dashboard (home) | Counts (sites, groups, open windows), a banner when an update is available, the session panel, and every site in one searchable list with its group as a tag | Add site, Open, Edit, Delete |
+| Group List | The same sites, one foldable section per `group_name` (ungrouped last) | Rename a group (saves each of its sites), Add, Open, Edit, Delete |
+| Settings | Browser, Updates, and where the files are | Save browser, Check for updates, Install and restart |
+| Add / edit site (form) | Name, group, login URL, login page type (recipe), username (hidden for `password-only`), password (write-only), self-signed toggle, profile mode, window mode | Save |
+| Session panel (on the Dashboard) | Live status per open site: Launching, Filling, Waiting for 2FA, Logged in, Failed. A warning when the window is signed in to the Windows account (decision 9) | Release window, Close window, Retry |
 
 The password field on the edit screen is always empty when opened. Leaving it empty keeps the stored password; typing a new one replaces it.
+
+### Settings
+
+Kept in `%LOCALAPPDATA%\NetLaunch\settings.json`, next to the vault. Nothing secret is in it. A missing or unreadable file gives the defaults.
+
+- **Browser** (`browser`: `edge`, `chrome` or `custom`; default `edge`). Edge and Chrome are found through the registry and the usual install folders. `custom` takes the path of another Chromium-based browser's exe (`browser_path`).
+  - Only Chromium-based browsers work: NetLaunch attaches over the DevTools protocol.
+  - The isolation switches and the seeded preferences are the same for every browser; the Edge-only ones are ignored by the others. The signed-in warning is about Edge's implicit sign-in, and CI only tests Edge (Windows) and Chrome (Linux).
+  - A change applies to the next Open. Open windows keep their browser.
+- **Check for updates when NetLaunch starts** (`check_updates`, default on).
+
+### Updates
+
+- **Publishing.** `.github/workflows/release.yml` (run from the Actions tab with a version, or by pushing a `v*` tag) builds the installer, signs it and creates a GitHub release with two files: the installer and `latest.json` (version, notes, the installer's URL and signature).
+  - The signing key pair is made once with `tauri signer generate`. The private key and its password are repository secrets; the public key is the repository variable `TAURI_UPDATER_PUBKEY`. The workflow puts the public key and the version into the build (`plugins.updater.pubkey`, `version`).
+  - Versions are `0.x.y` while the app is being tested. A GitHub pre-release is not offered to the app: the app reads `releases/latest/download/latest.json`, and GitHub's "latest" skips pre-releases.
+- **In the app.** At start-up (unless turned off), every six hours, and on "Check for updates", the app reads `latest.json`. A newer version shows a banner on the Dashboard and a mark on Settings.
+  - "Install and restart" downloads the installer (progress as `update-progress` events), checks its signature, closes the managed windows, and runs the installer in passive mode, which starts the new version. Released windows are untouched, and the vault and settings stay.
+  - A build without a public key (development builds, and the CI artifact) says it can't update itself and never asks GitHub.
+- This is the app's only network use of its own. It needs `github.com` to be reachable; offline, the start-up check is silent and the button shows the error.
 
 ## Testing plan
 
@@ -339,7 +365,7 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
    - Done when:
      - `spike run` passes in both modes on Windows, including the isolation checks.
      - The released window stays usable after the spike exits.
-3. **M2 — Mock login site.** The axum server with the eight test pages.
+3. **M2 — Mock login site.** The axum server with the test pages (eight at first; `/password-only` was added in M7).
    - Done when each page works by hand in Edge.
    - Status: built. 13 route tests pass, and all eight scenarios pass when driven in headless Chromium. The by-hand check in Edge on Windows is pending.
 4. **M3 — Vault.** SQLite schema, DPAPI-wrapped key, encrypt/decrypt, unit tests.
@@ -390,6 +416,7 @@ Each step has a check you can see before moving on. If a step fails, stop and fi
      - **First real consoles** (Nov 10–11, 2026): on UniFi and a Huawei switch the generic recipe filled both fields, then timed out on the submit button. The owner confirmed the signed-in warning appears. Two changes followed:
        - the Enter fallback above, in both built-in recipes;
        - a timed-out login in a managed window is now watched like a 2FA hand-over, so finishing it by hand flips the row to Logged in and updates `login_log`.
+     - **Sidebar, settings and updates** (Nov 11, 2026), at the owner's request: Dashboard, Group List and Settings pages; a browser choice (Edge, Chrome, or another Chromium-based browser by path); in-app updates from GitHub releases; and the `password-only` recipe for a Ruijie access point, with a ninth mock scenario, `/password-only`. Waiting on the owner's signing key and first release.
      - **UniFi recipe:** may not be needed if the Enter fallback works; otherwise waiting for the owner's `probe` output from the real login page (`probe/README.md`). The generic recipe may already work.
 
 ## Open decisions

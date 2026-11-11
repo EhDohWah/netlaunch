@@ -30,6 +30,7 @@ pub const SCENARIOS: &[(&str, &str, &str)] = &[
     ("wrong-password", "Always rejects", "Failed, with a clear message"),
     ("redirect-away", "Redirects to a different port before the form", "Stops with origin mismatch; nothing filled"),
     ("no-success", "Logs in but never shows the success marker", "Times out, window handed over"),
+    ("password-only", "Only a password field, no submit-type button, same address after login", "Logged in (needs the password-only recipe)"),
 ];
 
 #[derive(Clone)]
@@ -60,6 +61,7 @@ pub fn router(mock: MockState, site: SiteConfig) -> Router {
         .route("/redirect-away/login", get(redirect_away))
         .route("/no-success/login", get(no_success_form).post(no_success_submit))
         .route("/no-success/login/signed-in", get(no_success_signed_in))
+        .route("/password-only/login", get(password_only_page).post(password_only_submit))
         // Dashboards for the form-based scenarios.
         .route("/{scenario}/home", get(home))
         .with_state(AppState { mock, site })
@@ -468,5 +470,42 @@ async fn home(State(state): State<AppState>, Path(scenario): Path<String>, heade
     match state.mock.session_user(&headers, &scenario) {
         Some(user) => html::welcome(&scenario, &user).into_response(),
         None => Redirect::to(&format!("/{scenario}/login")).into_response(),
+    }
+}
+
+// ----- /password-only -----
+
+/// A device that only asks for a password, like a Ruijie access point.
+/// The button has no `type=submit` attribute, and the address is the same
+/// before and after login: signed in, this URL shows the dashboard.
+fn password_only_form(error: Option<&str>) -> Html<String> {
+    page(
+        "Sign in",
+        &format!(
+            r#"<h1>Access point</h1>
+{error}
+<form method="post" action="/password-only/login">
+  <label for="password">Password</label>
+  <input id="password" name="password" type="password">
+  <div><button>Log In</button></div>
+</form>"#,
+            error = html::error_line(error),
+        ),
+    )
+}
+
+async fn password_only_page(State(state): State<AppState>, headers: HeaderMap) -> Html<String> {
+    match state.mock.session_user(&headers, "password-only") {
+        Some(user) => html::welcome("password-only", &user),
+        None => password_only_form(None),
+    }
+}
+
+async fn password_only_submit(State(state): State<AppState>, Form(c): Form<Credentials>) -> Response {
+    if c.password == PASSWORD {
+        let token = state.mock.start_session("password-only", "admin");
+        redirect_with_cookie("/password-only/login", SESSION_COOKIE, &token)
+    } else {
+        password_only_form(Some("Incorrect password")).into_response()
     }
 }

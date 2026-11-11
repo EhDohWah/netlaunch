@@ -17,6 +17,7 @@ NetLaunch is a Windows desktop app (Rust + Tauri) that stores admin console logi
 - **M5 login engine: done** (`crates/engine`, `crates/driver-pw`, Open in the app). Every mock scenario passes in Edge in CI and on the owner's PC.
 - **M6 windows: built** (`crates/sessions`, the Open windows panel). 2FA watched until success, managed and released modes, Release/Close/Retry, signed-in warning. The owner confirmed `/mfa` and the signed-in warning; released mode and `/no-success` are unconfirmed. Timed-out logins in managed windows are watched too, so finishing by hand flips them to Logged in.
 - **M7 pilot: in progress.** CI builds and checks the installer (MSVC, bundled Playwright driver, `--self-check`, uninstall keeps the vault); log file; `probe` tool. On the owner's UniFi and Huawei switch the generic recipe filled the form but found no `type=submit` button; `click` now falls back to Enter in the password field (`else_press_enter_in`). Waiting on the owner's retry.
+- **Sidebar, settings, updates: built, not yet tried by the owner.** Dashboard / Group List / Settings pages; browser choice (`settings.json`); in-app updates (`updates.rs`, `.github/workflows/release.yml`); `password-only` recipe with the `selector_gone` rule. Updates need the owner's signing key (secrets `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, variable `TAURI_UPDATER_PUBKEY`) and a first release; see "Releasing" in `app/README.md`.
 - **CI** (`.github/workflows/ci.yml`) runs tests and `clippy -D warnings` on Windows and Linux for every push.
 
 ## Commands
@@ -57,7 +58,7 @@ crates/vault       SQLite + DPAPI + XChaCha20-Poly1305 (M3)
 crates/engine      recipes (JSON in recipes/), origin check, runner, BrowserDriver trait (M5); never imports playwright-rs
 crates/driver-pw   Edge launch + isolation (from the spike), Session = BrowserDriver on playwright-rs (M5)
 crates/sessions    the open windows: runs a login, watches 2FA, release/close, signed-in warning (M6); no Tauri
-crates/mock-site   axum test site with the spec's eight scenarios + a lookalike site (M2)
+crates/mock-site   axum test site with the spec's scenarios (nine) + a lookalike site (M2)
 spike/             M1 throwaway CLI
 probe/             prints a real login page's form (never typed values), for writing recipes (M7)
 vendor/playwright-rs  playwright-rs 0.20.1 with the no-console-window patch; not a workspace member
@@ -69,6 +70,9 @@ docs/SPEC.md       the spec
 - **Sessions** keep a `std::sync::Mutex` map, never held across an `await`. A kept window is an `Arc<Session>`; Close and Release abort its watcher, then need sole ownership (`Arc::try_unwrap`), so don't hold `Sessions::driver()` copies for long.
 - **Tauri commands** (`app/src-tauri/src/main.rs`) are thin wrappers. Their logic lives in `sites.rs` (site list), `logins.rs` (Open, and the hooks that turn session news into events and `login_log` rows) and `crates/sessions`, so it's tested without a window.
 - **Capabilities** (`app/src-tauri/capabilities/default.json`): `core:default` only, so no shell, file system or opener plugins. Keep it that way.
+  - `tauri-plugin-updater` is registered but called from Rust only (`updates.rs`). Don't grant `updater:*` permissions to the window.
+- **Settings** (`settings.rs`): `%LOCALAPPDATA%\NetLaunch\settings.json`, browser choice and the update check. Never put a secret in it.
+- **The version of a release comes from the Release workflow** (the tag or the typed version), which overrides `tauri.conf.json`. `updates::can_update` is false when the build has no `plugins.updater.pubkey`, as in development.
 - **Wine check of the app.** The windows-gnu build links `WebView2Loader.dll` dynamically. Copy it from `~/.cargo/registry/src/*/webview2-com-sys-*/x64/` next to the test `.exe` before running it under Wine. MSVC builds link it statically.
 
 ## Rules that must not be broken
@@ -79,6 +83,7 @@ These come from the spec's security section. Treat a change that breaks one as a
   - `Vault::reveal_password` is the only way to get a password back. It's called in one place, the closure `logins.rs` builds for `Sessions::open`; the engine calls it when it fills the password field.
   - `Site` (what the UI gets) has no password field. A test checks its JSON contains no password.
   - Never enable the vault's `insecure-test-protector` feature outside tests; it stores the data key unprotected.
+- **A username may be empty only for a recipe that types none** (`Recipe::needs_username`, checked in `sites.rs`).
 - **The 2FA watcher only reads.** `netlaunch_engine::logged_in` checks the `success` rule; nothing after the hand-over types or clicks.
 - **Never log filled text.**
   - Set the log level in code, never from `RUST_LOG`.
@@ -100,6 +105,7 @@ These come from the spec's security section. Treat a change that breaks one as a
 - **playwright-rs is patched** (`vendor/playwright-rs`, through `[patch.crates-io]`): on Windows it starts `node.exe` with `CREATE_NO_WINDOW`, or the installed app opens a terminal next to every login window. Upgrading means re-applying that patch; see `vendor/playwright-rs/NETLAUNCH.md`.
 - **Keep `playwright-rs` pinned exactly** in the root `Cargo.toml`. Upgrade on purpose, then re-run the mock-site suite. Its bundled Playwright version (currently 1.64.0) is what the manual driver fallback must match, and so is `PLAYWRIGHT_VERSION` in `app/scripts/stage-driver.mjs`.
 - **The installed app uses its bundled driver.** `main` calls `use_bundled_driver()` first thing, while no other thread exists (it sets an environment variable). Keep it first.
+- **Never ship an update path that skips the signature check**: no `dangerous*` updater options, no http endpoints, and never commit or log the signing private key.
 - **Uninstalling must keep the vault.** The app installs into the vault's folder; CI checks `vault.db` survives an uninstall. Don't add installer steps that delete that folder.
 - **The 2FA code is never read, stored or typed by the engine.** Tests may type the mock site's test code through the driver.
 - **No real credentials in the repo**, including tests and fixtures. The spike's `spike-user` / `Spike-Pa55-7f3c` account is fake.

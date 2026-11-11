@@ -20,6 +20,9 @@ pub struct SiteInput {
     #[serde(default)]
     pub group_name: Option<String>,
     pub login_url: String,
+    /// May be empty for a recipe that types no username (a device that
+    /// only asks for a password).
+    #[serde(default)]
     pub username: String,
     /// Required when adding. When editing, empty or missing keeps the
     /// stored password, like the edit screen's empty password field.
@@ -42,12 +45,16 @@ fn default_recipe() -> String {
 }
 
 /// Only recipes the engine knows can be saved, so Open never meets an
-/// unknown one.
-fn check_recipe(id: &str) -> Result<(), VaultError> {
-    match netlaunch_engine::builtin(id) {
-        Some(_) => Ok(()),
-        None => Err(VaultError::InvalidInput(format!("unknown login recipe '{id}'"))),
+/// unknown one. A username is required unless the recipe never types one.
+fn check_recipe(id: &str, username: &str) -> Result<(), VaultError> {
+    let recipe = netlaunch_engine::builtin(id)
+        .ok_or_else(|| VaultError::InvalidInput(format!("unknown login recipe '{id}'")))?;
+    if recipe.needs_username() && username.trim().is_empty() {
+        return Err(VaultError::InvalidInput(
+            "a username is required (pick the password-only recipe for a device that has none)".into(),
+        ));
     }
+    Ok(())
 }
 
 /// `None` for a missing or empty password.
@@ -56,7 +63,7 @@ fn non_empty(password: Option<SecretString>) -> Option<SecretString> {
 }
 
 pub fn add(vault: &mut Vault, input: SiteInput) -> Result<Site, VaultError> {
-    check_recipe(&input.recipe_id)?;
+    check_recipe(&input.recipe_id, &input.username)?;
     let password =
         non_empty(input.password).ok_or_else(|| VaultError::InvalidInput("a password is required".into()))?;
     let mut site = NewSite::new(&input.name, &input.login_url, &input.username, password);
@@ -71,7 +78,7 @@ pub fn add(vault: &mut Vault, input: SiteInput) -> Result<Site, VaultError> {
 }
 
 pub fn update(vault: &mut Vault, id: i64, input: SiteInput) -> Result<Site, VaultError> {
-    check_recipe(&input.recipe_id)?;
+    check_recipe(&input.recipe_id, &input.username)?;
     let update = SiteUpdate {
         name: input.name,
         group_name: input.group_name,
@@ -204,6 +211,29 @@ mod tests {
         assert!(matches!(add(&mut vault, unknown), Err(VaultError::InvalidInput(_))));
         let two_step = add(&mut vault, input(&NEW.replace("generic-form", "two-step-form"))).unwrap();
         assert_eq!(two_step.recipe_id, "two-step-form");
+    }
+
+    /// A device that only asks for a password (a Ruijie access point).
+    #[test]
+    fn a_password_only_site_needs_no_username() {
+        let mut vault = vault();
+        let ap = input(
+            r#"{"name":"AP","login_url":"https://10.0.3.210/","password":"Ap-Secret-1","recipe_id":"password-only"}"#,
+        );
+        let site = add(&mut vault, ap).unwrap();
+        assert_eq!(site.username, "");
+        assert_eq!(vault.reveal_password(site.id).unwrap().expose_secret(), "Ap-Secret-1");
+
+        // The other recipes type a username, so they still need one.
+        for recipe in ["generic-form", "two-step-form"] {
+            let missing = input(&format!(
+                r#"{{"name":"X","login_url":"https://10.0.3.211/","username":" ","password":"x","recipe_id":"{recipe}"}}"#
+            ));
+            assert!(matches!(add(&mut vault, missing), Err(VaultError::InvalidInput(_))), "{recipe}");
+        }
+        // Switching a saved site to a recipe that needs one is refused too.
+        let back = input(r#"{"name":"AP","login_url":"https://10.0.3.210/","recipe_id":"generic-form"}"#);
+        assert!(matches!(update(&mut vault, site.id, back), Err(VaultError::InvalidInput(_))));
     }
 
     #[test]

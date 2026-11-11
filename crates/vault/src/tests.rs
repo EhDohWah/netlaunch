@@ -212,7 +212,6 @@ fn invalid_input_is_rejected() {
     let mut vault = Vault::open_in_memory(&InsecureTestProtector).unwrap();
     let cases: Vec<(&str, NewSite)> = vec![
         ("empty name", NewSite::new("  ", "https://a.example", "u", secret("p"))),
-        ("empty username", NewSite::new("n", "https://a.example", "", secret("p"))),
         ("empty password", NewSite::new("n", "https://a.example", "u", secret(""))),
         ("ftp url", NewSite::new("n", "ftp://a.example", "u", secret("p"))),
         ("not a url", NewSite::new("n", "router", "u", secret("p"))),

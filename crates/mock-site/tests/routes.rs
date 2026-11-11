@@ -74,7 +74,7 @@ async fn index_lists_every_scenario() {
     for (path, _, _) in SCENARIOS {
         assert!(page.body.contains(&format!(r#"href="/{path}/login""#)), "missing /{path}");
     }
-    assert_eq!(SCENARIOS.len(), 8);
+    assert_eq!(SCENARIOS.len(), 9);
 }
 
 #[tokio::test]

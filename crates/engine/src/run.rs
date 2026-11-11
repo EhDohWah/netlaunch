@@ -346,12 +346,33 @@ async fn first_match<D: BrowserDriver>(driver: &D, set: &RuleSet, expected: &str
                 let on_site = describe_origin(url) == expected;
                 on_site && (url.contains(part.as_str()) == matches!(rule, Rule::UrlContains(_)))
             }
+            Rule::SelectorGone(selector) => {
+                // Checked twice, a second apart: while a page reloads, its
+                // fields are gone for a moment too. Any error (the page is
+                // loading, the window closed) counts as "still there".
+                if gone(driver, selector, expected).await {
+                    tokio::time::sleep(GONE_FOR).await;
+                    gone(driver, selector, expected).await
+                } else {
+                    false
+                }
+            }
         };
         if matched {
             return Some(rule.clone());
         }
     }
     None
+}
+
+/// How long a `selector_gone` rule's element must stay gone.
+const GONE_FOR: Duration = Duration::from_secs(1);
+
+/// True if the page is on the site's origin and shows nothing matching
+/// `selector`.
+async fn gone<D: BrowserDriver>(driver: &D, selector: &str, expected: &str) -> bool {
+    let on_site = driver.current_url().await.is_ok_and(|url| describe_origin(&url) == expected);
+    on_site && matches!(driver.is_visible(selector).await, Ok(false))
 }
 
 /// Every rule in `set` that matches now.

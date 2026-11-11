@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use netlaunch_driver_pw::{LaunchOptions, Profile, Session};
 use netlaunch_engine::recipe::{Rule, Step};
-use netlaunch_engine::{BrowserDriver, Recipe, builtin};
+use netlaunch_engine::{BrowserDriver, Recipe};
 
 const USAGE: &str = "\
 NetLaunch probe: print a login page's form, to write a recipe for it
@@ -121,7 +121,7 @@ async fn probe(options: Options) -> Result<(), String> {
         .clone()
         .or_else(netlaunch_driver_pw::find_edge)
         .ok_or("Edge not found; pass --browser <path to msedge.exe>")?;
-    let recipes: Vec<Recipe> = netlaunch_engine::builtin_list().iter().filter_map(|(id, _)| builtin(id)).collect();
+    let recipes: Vec<Recipe> = netlaunch_engine::builtin_list();
     let selectors = recipe_selectors(&recipes);
 
     let mut extra_args = Vec::new();

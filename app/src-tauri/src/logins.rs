@@ -54,15 +54,18 @@ impl Hooks for TauriHooks {
 
 /// The Open button. Resolves when the login has finished; a 2FA hand-over
 /// is then watched in the background.
-pub async fn open_site(vault: &SharedVault, sessions: &Sessions, site_id: i64) -> Result<OpenResult, String> {
+pub async fn open_site(
+    vault: &SharedVault,
+    sessions: &Sessions,
+    browser: std::path::PathBuf,
+    site_id: i64,
+) -> Result<OpenResult, String> {
     if sessions.list().iter().any(|view| view.site_id == site_id) {
         return Err("This site's window is already open. Use Close or Retry under Open windows.".into());
     }
     let site = vault.with(|v| v.get_site(site_id))?;
     let recipe = netlaunch_engine::builtin(&site.recipe_id)
         .ok_or_else(|| format!("This site uses an unknown login recipe '{}'. Edit it and pick one.", site.recipe_id))?;
-    let browser = netlaunch_driver_pw::find_edge()
-        .ok_or("Microsoft Edge wasn't found on this PC. NetLaunch opens sites in Edge.")?;
     let profile = match site.profile_mode {
         ProfileMode::Fresh => Profile::Fresh,
         ProfileMode::Persistent => Profile::Persistent(

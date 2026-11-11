@@ -182,6 +182,19 @@ async fn slow_form_is_waited_for() {
     finish(run).await;
 }
 
+/// A password-only device whose address doesn't change on login: the
+/// recipe types no username, presses Enter (the button isn't a submit-type
+/// one) and sees the password field go away.
+#[tokio::test(flavor = "multi_thread")]
+async fn password_only_device_logs_in() {
+    let Some((browser, _turn)) = start("password_only_device_logs_in").await else { return };
+    let run = login(browser, "password-only", &recipe("password-only", 15_000)).await;
+    assert_eq!(run.outcome, Outcome::LoggedIn);
+    assert!(run.session.is_visible("#welcome").await.unwrap());
+    assert!(run.session.current_url().await.unwrap().ends_with("/password-only/login"));
+    finish(run).await;
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn wrong_password_is_rejected() {
     let Some((browser, _turn)) = start("wrong_password_is_rejected").await else { return };
