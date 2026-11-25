@@ -214,17 +214,25 @@ input[type="checkbox"], input[type="radio"] { width: auto; height: auto; margin:
 input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; border: 0; }
 
 /* ----- the Add/Edit dialog and Settings: label on the left, field on the right ----- */
-.dialog.wide { width: 640px; display: flex; flex-direction: column; max-height: calc(100vh - 32px); }
+.dialog.wide { width: 520px; display: flex; flex-direction: column; max-height: calc(100vh - 32px); }
 .dialog.wide .dialog-body { overflow-y: auto; gap: 8px; padding-bottom: 16px; }
 .dialog-body h3, .settings h3 { margin: 12px 0 2px; padding-bottom: 4px; border-bottom: 1px solid var(--line); font-size: 14px; line-height: 20px; font-weight: 600; }
 .dialog.wide .field, .settings .field { align-items: start; }
-.dialog.wide .field { grid-template-columns: 160px minmax(0, 1fr); }
+.dialog.wide .field { grid-template-columns: 140px minmax(0, 1fr); }
 .settings .field { grid-template-columns: 220px minmax(0, 1fr); }
 .dialog.wide .field > :first-child, .settings .field > :first-child { color: var(--muted); padding-top: 6px; }
 .field .hint, .field .problem { display: block; font-size: 12px; line-height: 16px; margin-top: 4px; }
 .field .hint { color: var(--muted); }
 .field .problem { color: var(--error-text); }
 input.invalid, input.invalid:focus-visible { border-color: var(--error-text); }
+.field .below { margin-top: 6px; }
+
+/* "More options" in the Add/Edit dialog: a row that folds the rest away
+   and says what is chosen while folded. */
+.more { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; margin-top: 4px; padding: 4px 6px; border: 0; border-radius: 4px; background: transparent; text-align: left; }
+.more:hover { background: var(--hover); }
+.more-summary { flex: 1; min-width: 0; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.more-body { display: grid; gap: 8px; }
 .with-button { display: flex; gap: 4px; }
 .toggle { display: flex; align-items: center; gap: 8px; min-height: 32px; }
 .radios { display: grid; gap: 4px; padding-top: 6px; }
