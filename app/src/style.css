@@ -1,29 +1,29 @@
 /* NetLaunch's look: Windows 11 (Fluent) colours, sizes and spacing.
    Every colour is a variable here, in a light and a dark set; theme.js
-   picks the set by putting data-theme on <html>. */
+   picks the set by putting data-theme on <html>. Sizes follow Fluent's
+   4 px grid and type ramp (12/16 caption, 14/20 body, 28/36 title). */
 :root {
-  --mica: #eef1f6;       /* the window, behind the panes */
-  --bg: #eef1f6;
-  --panel: #ffffff;      /* content surfaces */
-  --panel-2: #f7f8fa;    /* headers, footers, the dock */
+  --mica: #f3f3f3;        /* the window, behind the panes */
+  --panel: #ffffff;       /* content surfaces */
+  --panel-2: #f9f9f9;     /* dialog footers, quiet surfaces */
   --text: #1b1b1b;
-  --muted: #565c66;
-  --line: #e1e4ea;
-  --line-strong: #8a8f98; /* the bottom edge of text boxes */
+  --muted: #5d5d5d;
+  --line: #e5e5e5;
+  --line-strong: #8a8a8a; /* the bottom edge of text boxes and buttons */
   --accent: #005fb8;
   --accent-text: #ffffff;
-  --hover: rgba(0, 0, 0, 0.05);
-  --selected: rgba(0, 95, 184, 0.12);
+  --hover: rgba(0, 0, 0, 0.04);
+  --selected: rgba(0, 0, 0, 0.06);
   --ok-bg: #dff6dd;
-  --ok-text: #0b6a0b;
+  --ok-text: #0e700e;
   --error-bg: #fde7e9;
   --error-text: #a4262c;
-  --warn-bg: #fff1cc;
-  --warn-text: #7a4a00;
-  --tag-bg: #eef0f4;
+  --warn-bg: #fff4ce;
+  --warn-text: #8a5300;
+  --tag-bg: #ededed;
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
   font-family: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
   color: var(--text);
   background: var(--mica);
@@ -34,41 +34,44 @@
 /* Set by theme.js: the saved choice, or the Windows setting. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --mica: #1c2028;
-  --bg: #1c2028;
-  --panel: #2a2d33;
-  --panel-2: #24272d;
+  --mica: #202020;
+  --panel: #2b2b2b;
+  --panel-2: #262626;
   --text: #ffffff;
-  --muted: #c3c8d0;
-  --line: #3b3f47;
-  --line-strong: #9aa0aa;
+  --muted: #c8c8c8;
+  --line: #3d3d3d;
+  --line-strong: #9a9a9a;
   --accent: #60cdff;
-  --accent-text: #00263d;
-  --hover: rgba(255, 255, 255, 0.07);
-  --selected: rgba(96, 205, 255, 0.18);
+  --accent-text: #003350;
+  --hover: rgba(255, 255, 255, 0.06);
+  --selected: rgba(255, 255, 255, 0.09);
   --ok-bg: #1f3a1f;
-  --ok-text: #7ad66f;
+  --ok-text: #6ccb5f;
   --error-bg: #442726;
   --error-text: #ff99a4;
-  --warn-bg: #43361a;
+  --warn-bg: #433519;
   --warn-text: #f5d061;
-  --tag-bg: #353941;
+  --tag-bg: #383838;
   --shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
 }
 
 * { box-sizing: border-box; }
 html, body, #app { height: 100%; }
 body { margin: 0; background: var(--mica); overflow: hidden; }
-code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 0.92em; }
-h2 { font-size: 15px; line-height: 22px; font-weight: 600; margin: 0; }
+code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 0.92em; overflow-wrap: anywhere; }
+h1 { font-family: "Segoe UI Variable Display", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif; font-size: 28px; line-height: 36px; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
+h2 { font-size: 14px; line-height: 20px; font-weight: 600; margin: 0; }
 p { margin: 0; }
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The keyboard's position is always visible. */
+:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
 
-.muted, .dim { color: var(--muted); }
-.small { font-size: 12px; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; line-height: 16px; }
 .grow { flex: 1; }
-.pad { padding: 16px 20px; }
-.scroll { overflow: auto; flex: 1; min-height: 0; }
+.num { font-variant-numeric: tabular-nums; }
+.count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+/* In the page for screen readers, but not drawn. */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* ----- icons (Fluent System Icons, filled with the text colour) ----- */
 .icon { display: inline-flex; width: 16px; height: 16px; flex: none; }
@@ -78,163 +81,153 @@ p { margin: 0; }
 button { font: inherit; color: var(--text); cursor: pointer; }
 button:disabled { opacity: 0.45; cursor: default; }
 .btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  min-height: 32px; padding: 4px 10px; border-radius: 4px; white-space: nowrap;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 32px; padding: 4px 11px; border-radius: 4px; white-space: nowrap;
   background: transparent; border: 1px solid transparent;
 }
 .btn:hover:not(:disabled) { background: var(--hover); }
 .btn.icon-only { padding: 4px 7px; }
-.btn.outline, .btn.small { background: var(--panel); border-color: var(--line); }
-.btn.small { min-height: 26px; padding: 1px 10px; }
+.btn.outline { background: var(--panel); border-color: var(--line); border-bottom-color: var(--line-strong); }
 .btn.accent { background: var(--accent); color: var(--accent-text); }
 .btn.accent:hover:not(:disabled) { background: var(--accent); filter: brightness(1.1); }
-.btn.danger { background: var(--error-text); color: var(--panel); min-width: 96px; }
+.btn.danger { background: var(--error-text); color: var(--panel); }
 .btn.danger:hover:not(:disabled) { background: var(--error-text); filter: brightness(1.1); }
-.dialog-foot .btn { min-width: 96px; }
-.sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+.btn.wide, .dialog-foot .btn { min-width: 120px; }
+.btn.current { background: var(--selected); }
+.pill { font-size: 12px; line-height: 16px; padding: 0 7px; border-radius: 9px; background: var(--warn-bg); color: var(--warn-text); }
 
-/* ----- the shell ----- */
-.app { height: 100%; display: flex; flex-direction: column; }
-.cmdbar { display: flex; align-items: center; gap: 2px; padding: 6px 10px; min-height: 46px; }
-.brand { font-size: 14px; margin: 0 14px 0 6px; }
-.searchbox {
-  display: flex; align-items: center; gap: 6px; width: 260px; height: 32px; padding: 0 8px;
-  background: var(--panel); border: 1px solid var(--line); border-bottom-color: var(--line-strong);
-  border-radius: 4px; color: var(--muted);
-}
-.searchbox:focus-within { border-bottom: 2px solid var(--accent); }
-.searchbox input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; color: var(--text); padding: 0; height: auto; }
-
-.body { flex: 1; min-height: 0; display: flex; }
-.navpane { width: 220px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 2px 8px 8px; overflow-y: auto; }
-.nav {
-  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 32px; padding: 4px 10px;
-  border: 0; border-radius: 4px; background: transparent; text-align: left;
-}
-.nav:hover { background: var(--hover); }
-.nav.current { background: var(--selected); }
-.nav .label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nav.leaf { padding-left: 36px; }
-.nav-row { display: flex; gap: 2px; }
-.nav-row .nav { flex: 1; min-width: 0; }
-.count { font-size: 12px; color: var(--muted); }
-.count.update { padding: 0 7px; border-radius: 9px; background: var(--warn-bg); color: var(--warn-text); }
-.tree { display: flex; flex-direction: column; gap: 2px; }
-
-/* The pane folded to its icons. */
-.collapsed .navpane { width: 50px; }
-.collapsed .nav .label, .collapsed .nav .count, .collapsed .tree-toggle { display: none; }
-.collapsed .nav { justify-content: center; padding: 4px 0; }
-
-.content {
-  flex: 1; min-width: 0; display: flex; flex-direction: column;
+/* ----- the two panes ----- */
+.app { height: 100%; display: flex; }
+.listpane { width: clamp(280px, 30%, 380px); flex: none; display: flex; flex-direction: column; min-height: 0; padding: 8px 0 0 8px; }
+.pane {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; margin: 8px 0 0 8px;
   background: var(--panel); border: 1px solid var(--line); border-right: 0; border-bottom: 0; border-radius: 8px 0 0 0;
   overflow: hidden;
 }
+.pane-body { flex: 1; min-height: 0; overflow-y: auto; padding: 24px 32px 32px; }
 
-.statusbar { display: flex; gap: 18px; padding: 3px 14px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; }
-.statusbar .notice { color: var(--text); }
-
-/* ----- info bars (above the grid) ----- */
-.infobar {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0;
-  padding: 6px 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); overflow-wrap: anywhere;
+.list-top { display: flex; gap: 6px; padding: 0 0 8px; }
+.searchbox {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px;
+  background: var(--panel); border: 1px solid var(--line); border-bottom-color: var(--line-strong);
+  border-radius: 4px; color: var(--muted);
 }
-.infobar.ok { background: var(--ok-bg); color: var(--ok-text); }
-.infobar.warn { background: var(--warn-bg); color: var(--warn-text); }
-.infobar.error { background: var(--error-bg); color: var(--error-text); }
-.infobar .btn { flex: none; color: var(--text); }
+/* The box shows the focus for its input: Fluent's accent underline. */
+.searchbox:focus-within { border-bottom: 2px solid var(--accent); }
+.searchbox input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; color: var(--text); padding: 0; height: auto; }
+.searchbox input:focus-visible { outline: none; border: 0; }
 
-/* ----- the site grid ----- */
-.grid-wrap { flex: 1; min-height: 0; overflow: auto; outline: 0; }
-.grid { width: 100%; min-width: 760px; border-collapse: collapse; table-layout: fixed; }
-.grid th {
-  position: sticky; top: 0; z-index: 1; padding: 0; text-align: left; font-weight: 400;
-  background: var(--panel-2); border-bottom: 1px solid var(--line);
-}
-.th { display: flex; align-items: center; gap: 4px; width: 100%; height: 30px; padding: 0 12px; border: 0; background: transparent; color: var(--muted); font-size: 12px; text-align: left; }
-button.th:hover { background: var(--hover); }
-.grid td { height: 32px; padding: 0 12px; border-bottom: 1px solid var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.grid tbody tr:hover { background: var(--hover); }
-.grid tbody tr.selected { background: var(--selected); }
-.grid-wrap:focus-visible tr.selected { box-shadow: inset 3px 0 0 var(--accent); }
-.grid td.name { font-weight: 600; }
-.grid tr.indent td.name { padding-left: 34px; }
-.col-name { width: 21%; } .col-group_name { width: 12%; } .col-login_url { width: 24%; }
-.col-username { width: 12%; } .col-last_used_at { width: 12%; } .col-status { width: 19%; }
-.group-row td { background: var(--panel-2); padding: 0 6px; height: 28px; }
-.fold { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; padding: 2px 4px; font-weight: 600; font-size: 12px; border-radius: 4px; }
-.grid-empty { padding: 24px; color: var(--muted); text-align: center; }
-.empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 24px; }
+/* All sites / Open now: the chosen one gets an accent underline. */
+.selector { display: flex; gap: 4px; padding: 0 0 4px; }
+.selector button { position: relative; border: 0; background: transparent; padding: 6px 10px 8px; border-radius: 4px; color: var(--muted); }
+.selector button:hover { background: var(--hover); }
+.selector button[aria-pressed="true"] { color: var(--text); font-weight: 600; }
+.selector button[aria-pressed="true"]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: 2px; height: 3px; border-radius: 2px; background: var(--accent); }
 
-.badges { display: flex; gap: 4px; overflow: hidden; }
-.badge, .tag {
-  display: inline-block; flex: none; font-size: 11px; line-height: 16px; padding: 0 7px; border-radius: 9px;
-  border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
-}
-.badge.ok { background: var(--ok-bg); color: var(--ok-text); border-color: transparent; }
-.badge.warn { background: var(--warn-bg); color: var(--warn-text); border-color: transparent; }
-.badge.error { background: var(--error-bg); color: var(--error-text); border-color: transparent; }
-.badge.busy { background: var(--tag-bg); border-color: transparent; }
+.list-foot { display: flex; align-items: center; gap: 2px; padding: 6px 8px 6px 0; border-top: 1px solid var(--line); }
+.foot-text { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
-/* ----- the Open windows dock ----- */
-.dock { flex: none; max-height: 40%; overflow-y: auto; background: var(--panel-2); border-top: 1px solid var(--line); }
-.dock-title { margin: 3px 6px; }
-.dock ul { list-style: none; margin: 0; padding: 0; }
-.dock li { display: flex; align-items: center; gap: 12px; min-height: 34px; padding: 2px 14px; border-top: 1px solid var(--line); }
-.dock li:hover { background: var(--hover); }
-.dock .name { width: 22%; min-width: 120px; flex: none; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dock-status { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; }
-.dock-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.warn-text { color: var(--warn-text); }
-.dock-actions { display: flex; gap: 4px; flex: none; }
+/* ----- the site list ----- */
+.sitelist { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 8px 8px 0; display: flex; flex-direction: column; gap: 2px; }
+/* The list is one Tab stop; the ring goes on the row the keyboard is on. */
+.sitelist:focus-visible { outline: none; }
+.sitelist:focus-visible .active { outline: 2px solid var(--text); outline-offset: -2px; }
+.group-head { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 12px 0 8px; margin-top: 6px; border-radius: 4px; font-size: 12px; color: var(--muted); cursor: default; user-select: none; }
+.group-head:hover { background: var(--hover); }
+.item { position: relative; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 4px 12px; border-radius: 4px; cursor: default; user-select: none; }
+.item:hover { background: var(--hover); }
+.item.selected { background: var(--selected); }
+/* Windows 11's selection mark: a short accent bar at the left edge. */
+.item.selected::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 2px; background: var(--accent); }
+.item-text { flex: 1; min-width: 0; display: grid; }
+.item-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-sub { font-size: 12px; line-height: 16px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-empty { padding: 24px 12px; color: var(--muted); }
+
+/* A status: a coloured dot and always the words too, never colour alone. */
+.state { display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 46%; font-size: 12px; line-height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--muted); }
+.ok .dot { background: var(--ok-text); }
+.warn .dot { background: var(--warn-text); }
+.error .dot { background: var(--error-text); }
+
+/* ----- the details pane ----- */
+.details { max-width: 760px; }
+.eyebrow { font-size: 12px; line-height: 16px; color: var(--muted); }
+.url { color: var(--muted); overflow-wrap: anywhere; margin-top: 2px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 20px 0; }
+.statusbox { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; padding: 12px 16px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--line); margin-bottom: 8px; }
+.statusbox.ok { background: var(--ok-bg); border-color: transparent; }
+.statusbox.warn { background: var(--warn-bg); border-color: transparent; }
+.statusbox.error { background: var(--error-bg); border-color: transparent; }
+.statusbox .dot { margin-top: 6px; }
+.statusbox-text { flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.statusbox-text strong { display: block; }
+.statusbox-text p { margin-top: 2px; }
+.statusbox-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.details h2 { margin: 24px 0 4px; }
+.facts { margin: 0; }
+.facts > div { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 12px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.notes { white-space: pre-wrap; overflow-wrap: anywhere; }
+.blank { display: grid; gap: 12px; justify-items: start; max-width: 560px; }
+
+/* ----- message bars at the top of the right pane ----- */
+.infobar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 8px 32px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.infobar.ok { background: var(--ok-bg); }
+.infobar.error { background: var(--error-bg); }
+.infobar .btn { flex: none; }
 
 /* ----- context menu ----- */
 .menu {
   position: fixed; z-index: 30; min-width: 220px; padding: 4px; display: flex; flex-direction: column;
   background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow);
 }
-.menu-item { display: flex; align-items: center; gap: 10px; min-height: 30px; padding: 3px 10px; border: 0; border-radius: 4px; background: transparent; text-align: left; }
-.menu-item:hover:not(:disabled), .menu-item:focus-visible { background: var(--hover); outline: 0; }
+.menu-item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 4px 10px; border: 0; border-radius: 4px; background: transparent; text-align: left; }
+.menu-item:hover:not(:disabled), .menu-item:focus-visible { background: var(--hover); }
+.menu-item:focus-visible { outline-offset: -2px; }
 .menu-item.sub { padding-left: 22px; }
 .menu-item .hint { font-size: 12px; color: var(--muted); }
 .menu-sep { height: 1px; margin: 4px 0; background: var(--line); }
 
 /* ----- dialogs ----- */
-.backdrop { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, 0.35); }
-.dialog { width: 420px; max-width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); overflow: hidden; }
-.dialog-body { padding: 20px 24px; display: grid; gap: 12px; }
-.dialog-body h2 { font-size: 18px; line-height: 26px; }
-.dialog-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 24px; background: var(--panel-2); border-top: 1px solid var(--line); }
+.backdrop { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, 0.35); overscroll-behavior: contain; }
+.dialog { width: 440px; max-width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); overflow: hidden; }
+.dialog-body { padding: 24px; display: grid; gap: 12px; }
+.dialog-body > h2 { font-size: 20px; line-height: 28px; }
+.dialog-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 24px; background: var(--panel-2); border-top: 1px solid var(--line); }
 .field { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; align-items: center; }
-.field > span { color: var(--muted); }
+.field > span:first-child, .field > label:first-child { color: var(--muted); }
+.banner { padding: 8px 12px; border-radius: 4px; margin: 0; overflow-wrap: anywhere; }
+.banner.error { background: var(--error-bg); color: var(--error-text); }
 
 /* ----- text boxes ----- */
 input, select, textarea {
-  font: inherit; color: var(--text); width: 100%; height: 32px; padding: 0 8px;
+  font: inherit; color: var(--text); width: 100%; height: 32px; padding: 0 10px;
   background: var(--panel); border: 1px solid var(--line); border-bottom-color: var(--line-strong); border-radius: 4px;
 }
-textarea { height: auto; padding: 6px 8px; }
-input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 0; border-bottom: 2px solid var(--accent); }
-input[type="checkbox"], input[type="radio"] { width: auto; height: auto; margin: 0 6px 0 0; }
+textarea { height: auto; padding: 6px 10px; }
+/* Fluent marks a focused text box with an accent underline. */
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; border-bottom: 2px solid var(--accent); }
+input[type="checkbox"], input[type="radio"] { width: auto; height: auto; margin: 0 8px 0 0; accent-color: var(--accent); }
+input[type="checkbox"]:focus-visible, input[type="radio"]:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; border: 0; }
 
-/* ----- the Add/Edit dialog ----- */
-.dialog.wide { width: 620px; display: flex; flex-direction: column; max-height: calc(100vh - 32px); }
+/* ----- the Add/Edit dialog and Settings: label on the left, field on the right ----- */
+.dialog.wide { width: 640px; display: flex; flex-direction: column; max-height: calc(100vh - 32px); }
 .dialog.wide .dialog-body { overflow-y: auto; gap: 8px; padding-bottom: 16px; }
-.dialog-body h3, .settings h3 {
-  margin: 10px 0 2px; padding-bottom: 4px; border-bottom: 1px solid var(--line);
-  font-size: 12px; line-height: 16px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;
-}
-.dialog.wide .field { grid-template-columns: 150px minmax(0, 1fr); align-items: start; }
-.dialog.wide .field > :first-child { color: var(--muted); padding-top: 6px; }
-.settings h3:first-child { margin-top: 0; }
-.field .hint, .field .problem { display: block; font-size: 12px; line-height: 16px; margin-top: 3px; }
+.dialog-body h3, .settings h3 { margin: 12px 0 2px; padding-bottom: 4px; border-bottom: 1px solid var(--line); font-size: 14px; line-height: 20px; font-weight: 600; }
+.dialog.wide .field, .settings .field { align-items: start; }
+.dialog.wide .field { grid-template-columns: 160px minmax(0, 1fr); }
+.settings .field { grid-template-columns: 220px minmax(0, 1fr); }
+.dialog.wide .field > :first-child, .settings .field > :first-child { color: var(--muted); padding-top: 6px; }
+.field .hint, .field .problem { display: block; font-size: 12px; line-height: 16px; margin-top: 4px; }
 .field .hint { color: var(--muted); }
 .field .problem { color: var(--error-text); }
 input.invalid, input.invalid:focus-visible { border-color: var(--error-text); }
 .with-button { display: flex; gap: 4px; }
 .toggle { display: flex; align-items: center; gap: 8px; min-height: 32px; }
-.radios { display: grid; gap: 2px; padding-top: 6px; }
+.radios { display: grid; gap: 4px; padding-top: 6px; }
 .radios label { display: flex; align-items: center; }
 
 /* A Windows toggle switch, drawn on a checkbox. */
@@ -248,24 +241,42 @@ input.switch::after {
 }
 input.switch:checked { background: var(--accent); border-color: var(--accent); }
 input.switch:checked::after { left: 23px; background: var(--accent-text); }
+input.switch:disabled { opacity: 0.45; cursor: default; }
 
-/* ----- Settings: the same label-left rows, on the page ----- */
 .settings { max-width: 760px; display: grid; gap: 8px; }
-.settings .field { grid-template-columns: 200px minmax(0, 1fr); align-items: start; }
-.settings .field > :first-child { color: var(--muted); padding-top: 6px; }
-.settings .field > span:last-child code { line-height: 32px; }
+.settings h3:first-child { margin-top: 0; }
+.settings .field > span:last-child:not(.hint) code { line-height: 32px; }
 .path { margin-left: 8px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
-.radios .indent { margin: 2px 0 4px 20px; width: auto; }
+.radios .indent { margin: 2px 0 4px 24px; width: auto; }
 .row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
 .row .hint { margin: 0; }
-.update-box { display: grid; gap: 6px; padding: 10px 12px; border-radius: 4px; background: var(--ok-bg); color: var(--ok-text); }
+.update-box { display: grid; gap: 6px; padding: 12px 16px; border-radius: 4px; background: var(--ok-bg); }
 .update-box .hint { color: inherit; }
 .update-box progress { display: block; width: 100%; height: 4px; margin-top: 6px; accent-color: var(--accent); }
-.banner { padding: 8px 12px; border-radius: 4px; margin: 0; }
-.banner.error { background: var(--error-bg); color: var(--error-text); }
-.notes { white-space: pre-wrap; }
+.badge { display: inline-block; font-size: 12px; line-height: 16px; padding: 0 7px; border-radius: 9px; background: var(--tag-bg); color: var(--muted); }
+.badge.ok { background: var(--ok-bg); color: var(--ok-text); }
 
 /* ----- Mica (Windows 11): set by App.vue once Windows confirms the
    material is on. The window and the page behind the panes go
    see-through; the panes keep their own solid colour. ----- */
 :root[data-mica], :root[data-mica] body { background: transparent; }
+
+/* ----- people who turned animations off in Windows ----- */
+@media (prefers-reduced-motion: reduce) {
+  input.switch::after { transition: none; }
+}
+
+/* ----- Windows contrast themes: the system replaces our colours, so
+   states that were only a background tint need its highlight colours. ----- */
+@media (forced-colors: active) {
+  .item.selected, .btn.current { background: Highlight; color: HighlightText; forced-color-adjust: none; }
+  .item.selected .item-sub, .item.selected .state { color: HighlightText; }
+  .item.selected::before { background: HighlightText; }
+  .item.selected .dot { background: HighlightText; }
+  .dot { background: CanvasText; }
+  .selector button[aria-pressed="true"]::after { background: Highlight; }
+  .statusbox, .update-box, .infobar { border: 1px solid CanvasText; }
+  input.switch:checked { background: Highlight; forced-color-adjust: none; }
+  input.switch:checked::after { background: HighlightText; }
+  input.switch::after { background: CanvasText; }
+}

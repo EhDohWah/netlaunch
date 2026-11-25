@@ -7,7 +7,7 @@
 // editing, leaving it empty keeps the stored password. The app never
 // sends a stored password to this screen, so the reveal button can only
 // show what is being typed now.
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
 import Icon from './Icon.vue';
 import Modal from './Modal.vue';
 
@@ -97,7 +97,11 @@ const saving = ref(false);
 
 async function submit() {
   for (const field of Object.keys(problems.value)) touched[field] = true;
-  if (Object.values(problems.value).some(Boolean)) return;
+  if (Object.values(problems.value).some(Boolean)) {
+    // Put the cursor in the first field that needs fixing.
+    nextTick(() => document.querySelector('.dialog input.invalid')?.focus());
+    return;
+  }
   error.value = '';
   saving.value = true;
   try {
@@ -129,7 +133,7 @@ async function submit() {
     <label class="field">
       <span>Name</span>
       <span>
-        <input v-model="fields.name" :class="{ invalid: shown('name') }" placeholder="UniFi Controller" @blur="touched.name = true" />
+        <input v-model="fields.name" :class="{ invalid: shown('name') }" placeholder="UniFi Controller…" @blur="touched.name = true" />
         <span v-if="shown('name')" class="problem">{{ shown('name') }}</span>
       </span>
     </label>
@@ -151,7 +155,7 @@ async function submit() {
     <label class="field">
       <span>Login page URL</span>
       <span>
-        <input v-model="fields.login_url" :class="{ invalid: shown('login_url') }" spellcheck="false" placeholder="https://10.0.0.5:8443/login" @blur="touched.login_url = true" />
+        <input v-model="fields.login_url" :class="{ invalid: shown('login_url') }" spellcheck="false" placeholder="https://10.0.0.5:8443/login…" @blur="touched.login_url = true" />
         <span v-if="shown('login_url')" class="problem">{{ shown('login_url') }}</span>
         <span v-else-if="editing" class="hint">Logins only fill on <code>{{ site.origin }}</code>.</span>
       </span>

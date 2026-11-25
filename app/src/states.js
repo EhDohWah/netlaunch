@@ -66,3 +66,12 @@ export function lastUsed(site) {
   const time = when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return when.toDateString() === new Date().toDateString() ? `Today ${time}` : `${when.toLocaleDateString()} ${time}`;
 }
+
+/** "10.0.0.1:8443" from a site's login URL: what tells two devices apart at a glance. */
+export function hostOf(site) {
+  try {
+    return new URL(site.login_url).host;
+  } catch {
+    return site.login_url;
+  }
+}

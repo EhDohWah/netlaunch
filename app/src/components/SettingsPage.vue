@@ -86,8 +86,10 @@ const megabytes = (bytes) => (bytes / 1048576).toFixed(1);
     <form class="field" @submit.prevent="submit">
       <span>Open sites in</span>
       <span class="radios">
+        <!-- Edge and Chrome apply as soon as they're picked, like the
+             switches below. Only a typed path needs its button. -->
         <label v-for="c in choices" :key="c.id">
-          <input v-model="form.browser" type="radio" :value="c.id" :disabled="!c.path" />
+          <input v-model="form.browser" type="radio" :value="c.id" :disabled="!c.path" @change="submit" />
           {{ c.name }}
           <span class="path">{{ c.path ?? 'not installed' }}</span>
         </label>
@@ -105,11 +107,11 @@ const megabytes = (bytes) => (bytes / 1048576).toFixed(1);
           aria-label="Path of the browser's .exe file"
           placeholder="C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"
         />
-        <span v-if="error" class="problem" role="alert">{{ error }}</span>
-        <span class="row">
-          <button type="submit" class="btn outline" :disabled="saving">{{ saving ? 'Saving…' : 'Apply' }}</button>
-          <span v-if="saved" class="hint" role="status">Saved. The next Open uses it.</span>
+        <span v-if="form.browser === 'custom'" class="row">
+          <button type="submit" class="btn outline" :disabled="saving">{{ saving ? 'Saving…' : 'Use this browser' }}</button>
         </span>
+        <span v-if="error" class="problem" role="alert">{{ error }}</span>
+        <span v-else-if="saved" class="hint" role="status">Saved. The next Open uses it.</span>
         <span class="hint">Windows that are already open keep their browser. Firefox and Safari can't be used: NetLaunch drives the window through the Chromium debugging connection.</span>
       </span>
     </form>

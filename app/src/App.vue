@@ -1,26 +1,27 @@
 <script setup>
-// Top level: the desktop shell. A command bar on top, a navigation pane
-// on the left (Dashboard, Groups with one entry per group, Settings), the
-// site grid with the "Open windows" dock in the middle, and a status bar.
+// Top level: the two-pane window.
+//   Left:  search, Add, the All / Open now choice, the site list, and at
+//          the bottom Settings and the theme toggle.
+//   Right: the selected site's details, or Settings.
 //
 // It loads the vault status and the site list, keeps the open windows up
 // to date, and looks for updates. Nothing here holds a password.
-import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import * as api from './api.js';
 import ContextMenu from './components/ContextMenu.vue';
 import Icon from './components/Icon.vue';
 import Modal from './components/Modal.vue';
 import SettingsPage from './components/SettingsPage.vue';
+import SiteDetails from './components/SiteDetails.vue';
 import SiteForm from './components/SiteForm.vue';
-import SiteGrid from './components/SiteGrid.vue';
-import WindowDock from './components/WindowDock.vue';
+import SiteList from './components/SiteList.vue';
 import { isBusy, siteStatus } from './states.js';
 import { theme, toggleTheme } from './theme.js';
 
-// Where the admin is: the page, and on Groups the chosen group
-// (null = every group, '' = the sites without one).
-const page = ref('dashboard');
-const group = ref(null);
+// The right pane: 'site' (the selected site) or 'settings'.
+const page = ref('site');
+// The list shows 'all' sites or only those with a window 'open'.
+const filter = ref('all');
 
 const status = ref(null);
 const sites = ref([]);
@@ -37,7 +38,7 @@ const sessions = reactive({});
 // Site ids with a Release/Close/Retry running.
 const pending = reactive({});
 const stopListening = [];
-// { settings, browsers, version, can_update } from the Rust side.
+// { settings, browsers, version, can_update, mica_supported } from the Rust side.
 const settingsView = ref(null);
 // Updates: `status` is the last check's answer.
 const update = reactive({ status: null, checking: false, error: '', installing: false, progress: null });
@@ -45,65 +46,53 @@ let updateTimer = null;
 
 const search = ref('');
 const searchBox = ref(null);
-const grid = ref(null);
+const list = ref(null);
 const selectedId = ref(null);
 // The right-click menu: { x, y, items } or null.
 const menu = ref(null);
 // A small dialog: { kind: 'delete', site } or { kind: 'rename', from, to }.
 const dialog = ref(null);
-
-// The navigation pane folds to icons; remembered like the theme.
-const NAV_KEY = 'netlaunch-nav-collapsed';
-const collapsed = ref(readFlag(NAV_KEY));
-const groupsOpen = ref(true);
-function readFlag(key) {
-  try {
-    return localStorage.getItem(key) === '1';
-  } catch {
-    return false;
-  }
-}
-function toggleNav() {
-  collapsed.value = !collapsed.value;
-  try {
-    localStorage.setItem(NAV_KEY, collapsed.value ? '1' : '0');
-  } catch {
-    // Not saved; it applies until the app closes.
-  }
-}
+// Read out by screen readers when it changes (see the template's last lines).
+const announcement = ref('');
 
 const groupNames = computed(() => [...new Set(sites.value.map((s) => s.group_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
-const ungrouped = computed(() => sites.value.filter((s) => !s.group_name).length);
-const countIn = (name) => sites.value.filter((s) => (s.group_name || '') === name).length;
-const sessionList = computed(() => Object.values(sessions).sort((a, b) => a.site_name.localeCompare(b.site_name)));
+const openCount = computed(() => Object.keys(sessions).length);
 
-// The grid's rows: the chosen group, narrowed by the search box.
+// The list's rows: the chosen filter, narrowed by the search box.
 const visibleSites = computed(() => {
-  let list = sites.value;
-  if (page.value === 'groups' && group.value !== null) list = list.filter((s) => (s.group_name || '') === group.value);
+  let rows = sites.value;
+  if (filter.value === 'open') rows = rows.filter((s) => sessions[s.id]);
   const q = search.value.trim().toLowerCase();
-  if (!q) return list;
-  return list.filter((s) => [s.name, s.group_name, s.username, s.login_url].some((field) => field && field.toLowerCase().includes(q)));
+  if (!q) return rows;
+  return rows.filter((s) => [s.name, s.group_name, s.username, s.login_url].some((field) => field && field.toLowerCase().includes(q)));
+});
+// Group headings only make sense for the whole, unsearched list.
+const grouped = computed(() => filter.value === 'all' && !search.value.trim());
+const emptyText = computed(() => {
+  if (search.value.trim()) return `No sites match “${search.value.trim()}”.`;
+  if (filter.value === 'open') return 'No windows are open. Open a site and it appears here.';
+  return 'No sites yet.';
 });
 
 const selected = computed(() => sites.value.find((s) => s.id === selectedId.value) ?? null);
-const selectedSession = computed(() => (selected.value ? sessions[selected.value.id] ?? null : null));
 const selectedStatus = computed(() => (selected.value ? siteStatus(selected.value, sessions, logins) : null));
-const canOpen = computed(() => !!selected.value && !logins[selected.value.id]?.busy && !selectedSession.value);
-const windowBusy = computed(() => !selectedSession.value || isBusy(selectedSession.value.state) || !!pending[selectedSession.value.site_id]);
 
-const title = computed(() => {
-  if (page.value === 'settings') return 'Settings';
-  if (page.value === 'dashboard') return 'All sites';
-  return group.value === null ? 'Groups' : group.value || 'Ungrouped';
-});
-const BROWSERS = { edge: 'Microsoft Edge', chrome: 'Google Chrome', custom: 'Custom browser' };
+// Tell screen-reader users when the selected site's status changes, as
+// sighted users see it change in the details pane.
+watch(
+  () => selectedStatus.value && `${selected.value.name}: ${selectedStatus.value.label}. ${selectedStatus.value.message}`,
+  (text) => {
+    if (text) announcement.value = text;
+  },
+);
 
-function go(id, groupName = null) {
-  form.value = null;
-  page.value = id;
-  group.value = groupName;
-  nextTick(() => grid.value?.focus());
+function showSettings() {
+  page.value = 'settings';
+}
+
+function select(id) {
+  selectedId.value = id;
+  page.value = 'site';
 }
 
 // `quiet`: the check at start-up. Being offline isn't worth an error
@@ -162,22 +151,39 @@ async function reload() {
   } catch (e) {
     loadError.value = String(e);
   }
+  // Start with a site showing rather than an empty pane.
+  if (!selected.value && sites.value.length) selectedId.value = sites.value[0].id;
 }
 
-// App-wide shortcuts. The grid handles its own (Enter, Del, F2, arrows).
+// App-wide shortcuts. The list handles its own (Enter, Del, F2, arrows).
 function shortcut(event) {
-  if (dialog.value || !status.value?.ok) return;
+  if (dialog.value || form.value || !status.value?.ok) return;
   if (!event.ctrlKey || event.altKey) return;
   const key = event.key.toLowerCase();
-  if (form.value) return;
   if (key === 'n') {
     event.preventDefault();
     form.value = { site: null };
-  } else if (key === 'f' && page.value !== 'settings') {
+  } else if (key === 'f') {
     event.preventDefault();
     searchBox.value?.focus();
     searchBox.value?.select();
   }
+}
+
+// In the search box: Enter opens the first match, Down moves into the
+// list, Esc clears the search.
+function searchKey(event) {
+  if (event.key === 'Enter' && visibleSites.value[0]) {
+    open(visibleSites.value[0]);
+  } else if (event.key === 'ArrowDown') {
+    if (visibleSites.value[0] && !visibleSites.value.some((s) => s.id === selectedId.value)) select(visibleSites.value[0].id);
+    list.value?.focus();
+  } else if (event.key === 'Escape' && search.value) {
+    search.value = '';
+  } else {
+    return;
+  }
+  event.preventDefault();
 }
 
 onMounted(async () => {
@@ -211,9 +217,9 @@ onMounted(async () => {
   try {
     for (const view of await api.listSessions()) sessions[view.site_id] = view;
   } catch {
-    // The vault error bar already explains it.
+    // The vault error message already explains it.
   }
-  grid.value?.focus();
+  list.value?.focus();
 });
 
 onUnmounted(() => {
@@ -224,7 +230,7 @@ onUnmounted(() => {
 
 async function open(site) {
   if (logins[site.id]?.busy || sessions[site.id]) return;
-  selectedId.value = site.id;
+  select(site.id);
   logins[site.id] = { busy: true };
   try {
     const result = await api.openSite(site.id);
@@ -237,7 +243,7 @@ async function open(site) {
   await reload();
 }
 
-// The "Trust this certificate" button: tick the site's self-signed
+// The "Trust this certificate" button: turn on the site's self-signed
 // setting, then open it again.
 async function trustAndOpen(site) {
   try {
@@ -265,30 +271,31 @@ async function windowAction(view, action) {
   }
 }
 
-// A line in the status bar for a few seconds.
+// A line at the bottom of the list for a few seconds, also read out.
 function flash(text) {
   notice.value = text;
+  announcement.value = text;
   setTimeout(() => {
     if (notice.value === text) notice.value = '';
   }, 4000);
 }
 
-// SiteForm hands over the fields; we save and return to the list. Errors
-// are thrown back so the form can show them next to the fields.
+// SiteForm hands over the fields; we save and close the dialog. Errors
+// are thrown back so the form can show them.
 async function save(fields) {
   const editing = form.value.site;
   const saved = editing ? await api.updateSite(editing.id, fields) : await api.addSite(fields);
   form.value = null;
   await reload();
-  selectedId.value = saved.id;
+  select(saved.id);
   flash(`${editing ? 'Saved' : 'Added'} ${saved.name}`);
 }
 
 // Changing a site's group, or renaming a group, saves each site with the
 // new name. A missing password keeps the stored one.
-async function setGroup(list, to, done) {
+async function setGroup(rows, to, done) {
   try {
-    for (const site of list) await api.updateSite(site.id, { ...site, group_name: to, password: null });
+    for (const site of rows) await api.updateSite(site.id, { ...site, group_name: to, password: null });
     flash(done);
   } catch (e) {
     loadError.value = String(e);
@@ -302,7 +309,6 @@ async function finishRename() {
   const name = to.trim();
   if (!name || name === from) return;
   await setGroup(sites.value.filter((s) => s.group_name === from), name, `Renamed ${from} to ${name}`);
-  if (group.value === from) group.value = name;
 }
 
 async function remove() {
@@ -357,159 +363,123 @@ function groupMenu({ group: name, x, y }) {
   menu.value = {
     x,
     y,
-    items: [
-      { label: 'Show only this group', icon: 'folder', action: () => go('groups', name) },
-      { label: 'Rename group', icon: 'rename', disabled: !name, action: () => (dialog.value = { kind: 'rename', from: name, to: name }) },
-    ],
+    items: [{ label: 'Rename group', icon: 'rename', disabled: !name, action: () => (dialog.value = { kind: 'rename', from: name, to: name }) }],
   };
+}
+
+// The keyboard goes back to the list when the menu closes, unless the
+// chosen item opened a dialog (which takes the focus itself).
+function closeMenu() {
+  menu.value = null;
+  nextTick(() => {
+    if (!dialog.value && !form.value) list.value?.focus();
+  });
 }
 </script>
 
 <template>
-  <div class="app" :class="{ collapsed }">
-    <header class="cmdbar">
-      <button class="btn icon-only" :aria-label="collapsed ? 'Expand navigation' : 'Collapse navigation'" :aria-expanded="!collapsed" @click="toggleNav">
-        <Icon name="menu" />
-      </button>
-      <strong class="brand">NetLaunch</strong>
-
-      <template v-if="status?.ok && page !== 'settings'">
-        <button class="btn accent" title="Add a site (Ctrl+N)" @click="form = { site: null }"><Icon name="add" />Add</button>
-        <button class="btn" :disabled="!canOpen" title="Open the selected site (Enter)" @click="open(selected)"><Icon name="open" />Open</button>
-        <button class="btn" :disabled="!selected" title="Edit the selected site (F2)" @click="form = { site: selected }"><Icon name="edit" />Edit</button>
-        <button class="btn" :disabled="!selected" title="Delete the selected site (Del)" @click="dialog = { kind: 'delete', site: selected }"><Icon name="delete" />Delete</button>
-        <span class="sep"></span>
-        <button
-          v-if="selectedSession?.window_mode !== 'released'"
-          class="btn"
-          :disabled="windowBusy"
-          title="Disconnect NetLaunch and leave the selected site's window open"
-          @click="windowAction(selectedSession, 'release')"
-        >
-          <Icon name="release" />Release
-        </button>
-        <button class="btn" :disabled="windowBusy" title="Close the selected site's window" @click="windowAction(selectedSession, 'close')"><Icon name="dismiss" />Close window</button>
-        <button class="btn" :disabled="windowBusy" title="Close the window and log in again" @click="windowAction(selectedSession, 'retry')"><Icon name="retry" />Retry</button>
-        <template v-if="page === 'groups' && group">
-          <span class="sep"></span>
-          <button class="btn" @click="dialog = { kind: 'rename', from: group, to: group }"><Icon name="rename" />Rename group</button>
-        </template>
-        <span class="grow"></span>
+  <div class="app">
+    <aside class="listpane" aria-label="Sites">
+      <div class="list-top">
         <label class="searchbox">
           <Icon name="search" />
-          <input ref="searchBox" v-model="search" type="search" placeholder="Search sites (Ctrl+F)" aria-label="Search sites" @keydown.enter="visibleSites[0] && open(visibleSites[0])" @keydown.esc="search = ''" />
+          <input ref="searchBox" v-model="search" type="search" autocomplete="off" spellcheck="false" placeholder="Search sites…" aria-label="Search sites" title="Search (Ctrl+F)" @keydown="searchKey" />
         </label>
-      </template>
-    </header>
-
-    <div class="body">
-      <nav class="navpane" aria-label="Main">
-        <button class="nav" :class="{ current: page === 'dashboard' }" :aria-current="page === 'dashboard' ? 'page' : undefined" title="Dashboard" @click="go('dashboard')">
-          <Icon name="home" /><span class="label">Dashboard</span>
-          <span v-if="sessionList.length" class="count" title="Open windows">{{ sessionList.length }}</span>
+        <button class="btn outline icon-only" :disabled="!status?.ok" aria-label="Add site" title="Add site (Ctrl+N)" @click="form = { site: null }">
+          <Icon name="add" />
         </button>
-        <div class="nav-row">
-          <button class="nav" :class="{ current: page === 'groups' && group === null }" :aria-current="page === 'groups' && group === null ? 'page' : undefined" title="Groups" @click="go('groups')">
-            <Icon name="folder" /><span class="label">Groups</span>
-          </button>
-          <button class="btn icon-only tree-toggle" :aria-label="groupsOpen ? 'Hide the groups' : 'Show the groups'" :aria-expanded="groupsOpen" @click="groupsOpen = !groupsOpen">
-            <Icon :name="groupsOpen ? 'down' : 'right'" />
-          </button>
-        </div>
-        <div v-if="groupsOpen && !collapsed" class="tree">
-          <button v-for="g in groupNames" :key="g" class="nav leaf" :class="{ current: page === 'groups' && group === g }" @click="go('groups', g)" @contextmenu.prevent="groupMenu({ group: g, x: $event.clientX, y: $event.clientY })">
-            <span class="label">{{ g }}</span><span class="count">{{ countIn(g) }}</span>
-          </button>
-          <button v-if="ungrouped" class="nav leaf" :class="{ current: page === 'groups' && group === '' }" @click="go('groups', '')">
-            <span class="label">Ungrouped</span><span class="count">{{ ungrouped }}</span>
-          </button>
-        </div>
+      </div>
 
+      <div class="selector">
+        <button :aria-pressed="filter === 'all'" @click="filter = 'all'">All sites <span class="count">{{ sites.length }}</span></button>
+        <button :aria-pressed="filter === 'open'" @click="filter = 'open'">Open now <span class="count">{{ openCount }}</span></button>
+      </div>
+
+      <SiteList
+        ref="list"
+        :sites="visibleSites"
+        :logins="logins"
+        :sessions="sessions"
+        :selected-id="page === 'site' ? selectedId : null"
+        :grouped="grouped"
+        :empty-text="emptyText"
+        @select="select"
+        @open="open"
+        @edit="(site) => (form = { site })"
+        @delete="(site) => (dialog = { kind: 'delete', site })"
+        @menu="siteMenu"
+        @group-menu="groupMenu"
+      />
+
+      <div class="list-foot">
+        <button class="btn" :class="{ current: page === 'settings' }" :aria-current="page === 'settings' ? 'page' : undefined" @click="showSettings">
+          <Icon name="settings" />Settings
+          <span v-if="update.status?.available" class="pill" title="An update is available">Update</span>
+        </button>
+        <button class="btn icon-only" :aria-label="`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`" :title="`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`" @click="toggleTheme">
+          <Icon :name="theme === 'dark' ? 'sun' : 'moon'" />
+        </button>
         <span class="grow"></span>
-        <button class="nav" :title="`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`" @click="toggleTheme">
-          <Icon :name="theme === 'dark' ? 'sun' : 'moon'" /><span class="label">{{ theme === 'dark' ? 'Light mode' : 'Dark mode' }}</span>
-        </button>
-        <button class="nav" :class="{ current: page === 'settings' }" :aria-current="page === 'settings' ? 'page' : undefined" title="Settings" @click="go('settings')">
-          <Icon name="settings" /><span class="label">Settings</span>
-          <span v-if="update.status?.available" class="count update" title="An update is available">Update</span>
-        </button>
-      </nav>
+        <span class="foot-text">{{ notice || `${sites.length} ${sites.length === 1 ? 'site' : 'sites'} · ${openCount} open` }}</span>
+      </div>
+    </aside>
 
-      <main class="content">
-        <p v-if="!status" class="pad muted">Opening the vault…</p>
+    <main class="pane">
+      <div v-if="update.status?.available && page !== 'settings'" class="infobar ok">
+        <span><strong>NetLaunch {{ update.status.available.version }} is available.</strong> You have {{ update.status.current }}.</span>
+        <button class="btn outline" @click="showSettings">See the update</button>
+      </div>
+      <p v-if="loadError" class="infobar error" role="alert">{{ loadError }}</p>
 
-        <div v-else-if="!status.ok && page !== 'settings'" class="infobar error" role="alert">
-          <span><strong>The vault couldn't be opened.</strong> {{ status.error }}</span>
-          <span v-if="status.path" class="dim">Vault file: <code>{{ status.path }}</code></span>
+      <div class="pane-body">
+        <p v-if="!status" class="muted">Opening the vault…</p>
+
+        <SettingsPage
+          v-else-if="page === 'settings'"
+          :view="settingsView"
+          :save="saveSettings"
+          :update="update"
+          :vault-path="status.path"
+          @check-update="checkUpdate()"
+          @install-update="installUpdate"
+        />
+
+        <div v-else-if="!status.ok" class="blank" role="alert">
+          <h1>The vault couldn't be opened</h1>
+          <p>{{ status.error }}</p>
+          <p v-if="status.path" class="muted">Vault file: <code>{{ status.path }}</code></p>
         </div>
 
-        <div v-else-if="page === 'settings'" class="scroll pad">
-          <SettingsPage :view="settingsView" :save="saveSettings" :update="update" :vault-path="status.path" @check-update="checkUpdate()" @install-update="installUpdate" />
+        <SiteDetails
+          v-else-if="selected"
+          :site="selected"
+          :status="selectedStatus"
+          :session="sessions[selected.id] ?? null"
+          :opening="!!logins[selected.id]?.busy"
+          :pending="!!pending[selected.id]"
+          :recipes="recipes"
+          @open="open(selected)"
+          @edit="form = { site: selected }"
+          @copy="copyUrl(selected)"
+          @delete="dialog = { kind: 'delete', site: selected }"
+          @trust="trustAndOpen(selected)"
+          @release="windowAction(sessions[selected.id], 'release')"
+          @close="windowAction(sessions[selected.id], 'close')"
+          @retry="windowAction(sessions[selected.id], 'retry')"
+        />
+
+        <div v-else class="blank">
+          <template v-if="!sites.length">
+            <h1>Add your first site</h1>
+            <p class="muted">Save the admin pages you log in to. Passwords are encrypted and stay on this PC.</p>
+            <button class="btn accent" @click="form = { site: null }"><Icon name="add" />Add site</button>
+          </template>
+          <p v-else class="muted">Select a site to see its details.</p>
         </div>
+      </div>
+    </main>
 
-        <template v-else>
-          <div v-if="update.status?.available" class="infobar ok" role="status">
-            <span><strong>NetLaunch {{ update.status.available.version }} is available.</strong> You have {{ update.status.current }}.</span>
-            <button class="btn small" @click="go('settings')">See the update</button>
-          </div>
-          <p v-if="loadError" class="infobar error" role="alert">{{ loadError }}</p>
-          <!-- What the selected site's last login said, when it needs reading. -->
-          <div v-if="selectedStatus && (selectedStatus.message || selectedStatus.warnings.length)" class="infobar" :class="selectedStatus.kind" role="status">
-            <span>
-              <strong>{{ selected.name }}: {{ selectedStatus.label }}.</strong> {{ selectedStatus.message }}
-              <span v-for="w in selectedStatus.warnings" :key="w" class="warning"> Warning: {{ w }}</span>
-            </span>
-            <button v-if="selectedStatus.fix === 'trust_certificate'" class="btn small" title="Only for devices on your own network" @click="trustAndOpen(selected)">
-              Trust this certificate and open again
-            </button>
-          </div>
-
-          <section v-if="!sites.length" class="empty">
-            <h2>No sites yet</h2>
-            <p class="muted">Add the admin consoles you log in to. Passwords are encrypted and stay on this PC.</p>
-            <button class="btn accent" @click="form = { site: null }"><Icon name="add" />Add your first site</button>
-          </section>
-          <SiteGrid
-            v-else
-            ref="grid"
-            :sites="visibleSites"
-            :logins="logins"
-            :sessions="sessions"
-            :selected-id="selectedId"
-            :grouped="page === 'groups' && group === null"
-            @select="(id) => (selectedId = id)"
-            @open="open"
-            @edit="(site) => (form = { site })"
-            @delete="(site) => (dialog = { kind: 'delete', site })"
-            @menu="siteMenu"
-            @group-menu="groupMenu"
-          />
-
-          <WindowDock
-            v-if="sessionList.length"
-            :sessions="sessionList"
-            :pending="pending"
-            @select="(id) => (selectedId = id)"
-            @release="(v) => windowAction(v, 'release')"
-            @close="(v) => windowAction(v, 'close')"
-            @retry="(v) => windowAction(v, 'retry')"
-          />
-        </template>
-      </main>
-    </div>
-
-    <footer class="statusbar">
-      <span>{{ sites.length }} {{ sites.length === 1 ? 'site' : 'sites' }}</span>
-      <span>{{ groupNames.length }} {{ groupNames.length === 1 ? 'group' : 'groups' }}</span>
-      <span>{{ sessionList.length }} open {{ sessionList.length === 1 ? 'window' : 'windows' }}</span>
-      <span v-if="page !== 'settings'">{{ title }}<template v-if="selected">: {{ selected.name }} selected</template></span>
-      <span v-if="notice" class="notice" role="status">{{ notice }}</span>
-      <span class="grow"></span>
-      <span v-if="settingsView">{{ BROWSERS[settingsView.settings.browser] }}</span>
-      <span v-if="settingsView">NetLaunch {{ settingsView.version }}</span>
-    </footer>
-
-    <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menu.items" @close="menu = null" />
+    <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menu.items" @close="closeMenu" />
 
     <!-- `key`: a fresh form for each site, never the last one's fields. -->
     <SiteForm v-if="form" :key="form.site?.id ?? 'new'" :site="form.site" :groups="groupNames" :recipes="recipes" :save="save" @cancel="form = null" />
@@ -525,12 +495,16 @@ function groupMenu({ group: name, x, y }) {
     <Modal v-if="dialog?.kind === 'rename'" :title="`Rename ${dialog.from}`" @cancel="dialog = null" @submit="finishRename">
       <label class="field">
         <span>Group name</span>
-        <input v-model="dialog.to" required />
+        <input v-model="dialog.to" autocomplete="off" />
       </label>
       <template #buttons>
         <button type="submit" class="btn accent">Rename</button>
         <button type="button" class="btn outline" @click="dialog = null">Cancel</button>
       </template>
     </Modal>
+
+    <!-- Always in the page, so screen readers notice when its text
+         changes. Hidden from sight: the same text is shown elsewhere. -->
+    <div class="sr-only" aria-live="polite">{{ announcement }}</div>
   </div>
 </template>

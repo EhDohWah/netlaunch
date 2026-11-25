@@ -273,22 +273,24 @@ Each login is a small JSON recipe: ordered steps, plus rules that say what "logg
 
 ## User interface
 
-A Windows 11 (Fluent) desktop layout in the Tauri window, built with Vue 3 + Vite (decision 7) and hand-written CSS on one set of colour variables (light and dark). Icons are Fluent System Icons (MIT), bundled as inline SVG. Redesigned Nov 11–12, 2026 at the owner's request; commands, storage and login behaviour were not changed.
+A Windows 11 (Fluent) list-and-details layout in the Tauri window, built with Vue 3 + Vite (decision 7) and hand-written CSS on one set of colour variables (light and dark). Icons are Fluent System Icons (MIT), bundled as inline SVG.
+
+History: a first desktop redesign (Nov 11–12, 2026, released as 0.3.0) used a command bar, a sortable grid and an "Open windows" dock. A review on Nov 25 found a site's status shown in three places, a toolbar that was mostly disabled, clipped columns and several keyboard and screen-reader gaps, and the owner chose the layout below. Commands, storage and login behaviour were not changed by either redesign.
 
 | Part | What it shows | Actions |
 |---|---|---|
-| Command bar (top) | The app name, the commands for the selected site, the search box | Add (Ctrl+N), Open, Edit, Delete, Release, Close window, Retry, Rename group, Search (Ctrl+F; Enter opens the first match) |
-| Navigation pane (left, folds to icons) | Dashboard, Groups with one entry per group, and at the bottom the theme toggle and Settings | Pick a page or a group |
-| Site grid | One row per site: Name, Group, URL, Username, Last used, Status (small badges: login state, self-signed, password only, released). Columns sort. On Groups, a foldable header row per group | Select; double-click or Enter opens; F2 edits; Del deletes (after a confirmation); right-click menu with the same commands plus Copy URL and Move to group |
-| Info bar (above the grid) | The selected site's last login message and warnings, the "Trust this certificate" button, a new version, load errors | |
-| Open windows dock (under the grid, when any are open) | Live status per open window, with its message and warnings (including the signed-in warning, decision 9) | Release, Close, Retry |
-| Status bar (bottom) | Site, group and open-window counts, the last action, the browser, the version | |
+| List pane (left) | A search box and an Add button; a choice between All sites and Open now (sites with a window NetLaunch is looking after); the sites, two lines each (name, then address and username) with the login status as a dot and words; a foldable heading per group. At the bottom: Settings, the theme toggle, and the counts or the last action | Select; double-click or Enter opens; F2 edits; Del deletes (after a confirmation); Ctrl+N adds; Ctrl+F searches (Enter opens the first match, Down moves into the list); typing letters jumps to a site by name; right-click, Shift+F10 or the Menu key shows a menu with the same commands plus Copy URL, Move to group and, on a group, Rename group |
+| Details pane (right) | The selected site: group, name, URL; its buttons; the result of its last login or the live state of its open window, with the message and warnings (including the signed-in warning, decision 9); then its saved settings and notes | Open, Edit, Copy URL, Delete; Release, Close window, Retry while its window is open; "Trust this certificate and open again" after a certificate failure |
+| Message bars (top of the right pane) | A new version; load errors | See the update |
 | Add / edit site (dialog) | Sections General, Login, Security, Behaviour; label left, field right; a message under each field that needs fixing | Save, Cancel (Esc) |
-| Settings (page) | Browser, Appearance, Updates, Files, in the same label-left rows | Apply, switches, Check for updates, Install and restart |
+| Settings (in the right pane) | Browser, Appearance, Updates, Files, in the same label-left rows | Radio buttons and switches apply at once; Check for updates; Install and restart |
 
+- A site's status is shown in two places only: the dot and words in the list, and the status box in the details pane.
 - The password field in the dialog is always empty when opened. Leaving it empty keeps the stored password; typing a new one replaces it. Its reveal button shows only what is being typed: a stored password is never sent to the window.
-- The theme choice and the folded state of the navigation pane are kept in the webview's `localStorage`. Until a theme is chosen, the app follows the Windows setting. The window's title bar is switched to match (`set_window_theme`).
+- **Keyboard and assistive technology.** The list is one Tab stop exposed as a tree (groups and sites, with the selected and expanded states). Dialogs keep Tab inside them and give the focus back when they close. The keyboard focus is always visible. Status changes of the selected site and the short "Saved…" notices are announced through a live region. In a Windows contrast theme the selection uses the system highlight colours, and a status is never shown by colour alone.
+- The theme choice is kept in the webview's `localStorage`. Until a theme is chosen, the app follows the Windows setting. The window's title bar is switched to match (`set_window_theme`).
 - **Mica** (Windows 11 only): the window is created transparent, and `set_mica` turns the material on when the setting is on and the Windows build is 22000 or later. Only then does the page drop its own background; otherwise it paints a solid colour, so nothing shows through on Windows 10.
+- Not kept from the 0.3.0 layout: sortable columns (the list is ordered by group, then name) and folding the left pane to icons.
 
 ### Settings
 

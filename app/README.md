@@ -3,8 +3,8 @@
 The desktop app: a Tauri 2 window with a Vue 3 + Vite frontend, wired to the vault (`crates/vault`) and the login engine (`crates/engine`, `crates/driver-pw`).
 
 - `src/`: the Vue frontend.
-  - `App.vue` is the desktop shell: command bar, navigation pane, status bar, shortcuts.
-  - `components/SiteGrid.vue` is the site list (flat on the Dashboard, with group rows on Groups), `WindowDock.vue` the open windows, `SiteForm.vue` the Add/Edit dialog, `SettingsPage.vue` the settings.
+  - `App.vue` is the two-pane shell: the list pane on the left, the details pane on the right, shortcuts.
+  - `components/SiteList.vue` is the site list with its group headings, `SiteDetails.vue` the selected site, `SiteForm.vue` the Add/Edit dialog, `SettingsPage.vue` the settings.
   - `ContextMenu.vue`, `Modal.vue` and `Icon.vue` (Fluent System Icons) are the shared pieces; `style.css` holds every colour, for both themes.
   - `api.js` calls the Rust commands.
 - `src-tauri/`: the Rust side (crate `netlaunch-app`, binary `netlaunch`).
@@ -185,8 +185,10 @@ Keep the mock site running, and use the sites from the M5 check.
 
 ## Check by hand: sidebar, settings, updates
 
-1. **Layout.** The navigation pane shows Dashboard, Groups (with each group under it) and, at the bottom, the theme toggle and Settings; it folds to icons. Groups shows a foldable row per group, and Rename group keeps the sites' passwords.
-   - Grid: double-click or Enter opens, F2 edits, Del asks before deleting, Ctrl+N adds, Ctrl+F searches, right-click shows the menu.
+1. **Layout.** The left pane has the search box, Add, All sites / Open now, the sites under a foldable heading per group, and at the bottom Settings and the theme toggle. The right pane shows the selected site. Right-click a group heading to rename it; the sites keep their passwords.
+   - List: double-click or Enter opens, F2 edits, Del asks before deleting, Ctrl+N adds, Ctrl+F searches, typing letters jumps to a site, and right-click, Shift+F10 or the Menu key shows the menu.
+   - Keyboard only: Tab reaches the list once; arrows move through it; Tab stays inside an open dialog, and closing it returns to the list.
+   - Windows contrast theme (Settings > Accessibility > Contrast themes): the selected site is still clearly marked.
    - On Windows 11, Settings > Appearance > Mica background tints the window with the wallpaper; switching it off gives a flat colour. The title bar follows the light/dark theme.
 2. **Password only.** Add the mock site's `https://localhost:8443/password-only/login` with **Login page type: Password only** (the username field disappears) and the test password. Open logs in.
 3. **Browser.** Settings > Browser: pick Chrome (if installed), Save, then Open a site: it opens in Chrome. Switch back to Edge.
