@@ -290,6 +290,12 @@ History: a first desktop redesign (Nov 11–12, 2026, released as 0.3.0) used a 
 - **Keyboard and assistive technology.** The list is one Tab stop exposed as a tree (groups and sites, with the selected and expanded states). Dialogs keep Tab inside them and give the focus back when they close. The keyboard focus is always visible. Status changes of the selected site and the short "Saved…" notices are announced through a live region. In a Windows contrast theme the selection uses the system highlight colours, and a status is never shown by colour alone.
 - The theme choice is kept in the webview's `localStorage`. Until a theme is chosen, the app follows the Windows setting. The window's title bar is switched to match (`set_window_theme`).
 - **Mica** (Windows 11 only): the window is created transparent, and `set_mica` turns the material on when the setting is on and the Windows build is 22000 or later. Only then does the page drop its own background; otherwise it paints a solid colour, so nothing shows through on Windows 10.
+- **Groups** (decided Nov 25, 2026: stay labels). A group is the `group_name` text its sites share, not a record of its own, so the vault's structure is unchanged. What follows from that, and the rules around it:
+  - A group is created by saving a site with a new name: "New group…" in the dialog's Group dropdown, or Move to group › New group… in a site's menu. It disappears when its last site leaves. Empty groups and a custom order aren't possible; the list is alphabetical with "No group" last.
+  - **Rename** (the group heading's menu, or F2 on it) changes every site in the group in one transaction (`rename_group`). Renaming onto another group's name merges the two, and the dialog says so before it happens.
+  - **Remove group** (the menu, or Del on the heading) asks first, then clears the label in one statement (`remove_group`): the sites are kept and move to "No group". Nothing deletes a group's sites together; deleting stays a per-site action.
+  - One spelling per group: a name that differs from an existing group only in capitals uses the existing spelling (ASCII letters; SQLite's `NOCASE`). Names are trimmed, at most 40 characters, and "No group" is refused.
+  - Which groups are folded is kept in the webview's `localStorage` and follows a rename.
 - Not kept from the 0.3.0 layout: sortable columns (the list is ordered by group, then name) and folding the left pane to icons.
 
 ### Settings

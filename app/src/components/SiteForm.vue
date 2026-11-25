@@ -125,7 +125,14 @@ const problems = computed(() => ({
   username: !needsUsername.value || fields.username.trim() ? '' : 'Enter the username (or pick "Password only" under More options)',
   password: editing.value || password.value ? '' : 'Enter the password',
   name: fields.name.trim() ? '' : 'Give the site a name',
-  group: groupChoice.value === NEW_GROUP && !newGroup.value.trim() ? "Type the new group's name" : '',
+  group:
+    groupChoice.value !== NEW_GROUP
+      ? ''
+      : !newGroup.value.trim()
+        ? "Type the new group's name"
+        : newGroup.value.trim().toLowerCase() === 'no group'
+          ? 'Pick "No group" from the list instead, or type another name'
+          : '',
 }));
 const tried = ref(false);
 const shown = (field) => (tried.value ? problems.value[field] : '');
@@ -221,7 +228,7 @@ async function submit() {
           <option v-for="g in groups" :key="g" :value="g">{{ g }}</option>
           <option :value="NEW_GROUP">New group…</option>
         </select>
-        <input v-if="groupChoice === NEW_GROUP" v-model="newGroup" class="below" :class="{ invalid: shown('group') }" autocomplete="off" aria-label="New group's name" placeholder="New group's name…" />
+        <input v-if="groupChoice === NEW_GROUP" v-model="newGroup" class="below" :class="{ invalid: shown('group') }" maxlength="40" autocomplete="off" aria-label="New group's name" placeholder="New group's name…" />
         <span v-if="shown('group')" class="problem">{{ shown('group') }}</span>
       </span>
     </div>

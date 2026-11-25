@@ -88,6 +88,7 @@ These come from the spec's security section. Treat a change that breaks one as a
   - `Vault::reveal_password` is the only way to get a password back. It's called in one place, the closure `logins.rs` builds for `Sessions::open`; the engine calls it when it fills the password field.
   - `Site` (what the UI gets) has no password field. A test checks its JSON contains no password.
   - Never enable the vault's `insecure-test-protector` feature outside tests; it stores the data key unprotected.
+- **Groups are labels** (`sites.group_name`), not rows. Rename and remove go through `Vault::rename_group` / `remove_group`, one transaction each; don't loop over `update_site` for them. Removing a group never deletes its sites.
 - **A username may be empty only for a recipe that types none** (`Recipe::needs_username`, checked in `sites.rs`).
 - **The 2FA watcher only reads.** `netlaunch_engine::logged_in` checks the `success` rule; nothing after the hand-over types or clicks.
 - **Never log filled text.**

@@ -185,6 +185,7 @@ Keep the mock site running, and use the sites from the M5 check.
 
 ## Check by hand: sidebar, settings, updates
 
+0. **Groups.** Right-click a group heading: Rename group and Remove group… (F2 and Del do the same). Removing keeps the sites and moves them to No group. Renaming onto another group's name offers to merge. In Add site, Group > New group… creates one. Fold a group, restart NetLaunch: it is still folded.
 1. **Layout.** The left pane has the search box, Add, All sites / Open now, the sites under a foldable heading per group, and at the bottom Settings and the theme toggle. The right pane shows the selected site. Right-click a group heading to rename it; the sites keep their passwords.
    - List: double-click or Enter opens, F2 edits, Del asks before deleting, Ctrl+N adds, Ctrl+F searches, typing letters jumps to a site, and right-click, Shift+F10 or the Menu key shows the menu.
    - Keyboard only: Tab reaches the list once; arrows move through it; Tab stays inside an open dialog, and closing it returns to the list.
@@ -206,6 +207,8 @@ Keep the mock site running, and use the sites from the M5 check.
 | `list_recipes` | none | `{ id, name, needs_username }[]`, the built-in recipes |
 | `open_site` | `{ id }` | `{ outcome, message, warnings, fix }`, when the login has finished. `outcome` is `success`, `mfa_handoff`, `failed`, `timeout` or `origin_mismatch`. `fix` is `"trust_certificate"` when Edge rejected the site's certificate, else null |
 | `trust_certificate` | `{ id }` | the saved `Site`, with its self-signed setting ticked |
+| `rename_group` | `{ from, to }` | how many sites moved; renaming onto another group's name merges the two |
+| `remove_group` | `{ name }` | how many sites now have no group (they are kept) |
 | `list_sessions` | none | `SessionView[]`: `{ site_id, site_name, state, message, warnings, window_mode }` |
 | `release_window` | `{ id }` | nothing; the window is handed over |
 | `close_window` | `{ id }` | nothing; the window is closed |

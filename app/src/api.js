@@ -22,6 +22,15 @@ export const updateSite = (id, site) => invoke('update_site', { id, site });
 
 export const deleteSite = (id) => invoke('delete_site', { id });
 
+/**
+ * Renames a group: every site in it, in one step. Resolves to how many
+ * sites moved. Renaming onto another group's name merges the two.
+ */
+export const renameGroup = (from, to) => invoke('rename_group', { from, to });
+
+/** Removes a group. Its sites are kept and have no group afterwards. */
+export const removeGroup = (name) => invoke('remove_group', { name });
+
 /** @returns {Promise<{id: string, name: string, needs_username: boolean}[]>} the built-in login recipes */
 export const listRecipes = () => invoke('list_recipes');
 

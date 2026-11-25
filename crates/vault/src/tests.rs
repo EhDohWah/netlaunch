@@ -227,6 +227,109 @@ fn invalid_input_is_rejected() {
     assert!(matches!(vault.update_site(id, update), Err(VaultError::InvalidInput(_))));
 }
 
+fn grouped(name: &str, group: &str) -> NewSite {
+    let mut site = NewSite::new(name, "https://10.0.0.9/login", "admin", secret("Group-Pa55"));
+    site.group_name = Some(group.into());
+    site
+}
+
+fn groups_of(vault: &Vault) -> Vec<(String, Option<String>)> {
+    vault.list_sites().unwrap().into_iter().map(|s| (s.name, s.group_name)).collect()
+}
+
+/// "switches" typed for a second site joins the existing "Switches"
+/// rather than becoming a second group.
+#[test]
+fn a_group_keeps_one_spelling() {
+    let mut vault = Vault::open_in_memory(&InsecureTestProtector).unwrap();
+    let a = vault.add_site(grouped("A", "Switches")).unwrap();
+    let b = vault.add_site(grouped("B", " switches ")).unwrap();
+    assert_eq!(vault.get_site(b).unwrap().group_name.as_deref(), Some("Switches"));
+
+    // Editing a site into a group follows the same rule.
+    let mut update = SiteUpdate::from_site(&vault.get_site(b).unwrap());
+    update.group_name = Some("SWITCHES".into());
+    vault.update_site(b, update).unwrap();
+    assert_eq!(vault.get_site(b).unwrap().group_name.as_deref(), Some("Switches"));
+
+    // The only site of a group may change its capitals: its own old
+    // spelling doesn't hold it back.
+    let c = vault.add_site(grouped("C", "wifi")).unwrap();
+    let mut update = SiteUpdate::from_site(&vault.get_site(c).unwrap());
+    update.group_name = Some("WiFi".into());
+    vault.update_site(c, update).unwrap();
+    assert_eq!(vault.get_site(c).unwrap().group_name.as_deref(), Some("WiFi"));
+    assert_eq!(vault.get_site(a).unwrap().group_name.as_deref(), Some("Switches"));
+}
+
+#[test]
+fn bad_group_names_are_rejected() {
+    let mut vault = Vault::open_in_memory(&InsecureTestProtector).unwrap();
+    let long = "x".repeat(MAX_GROUP_NAME + 1);
+    for name in ["No group", "no GROUP", long.as_str()] {
+        assert!(matches!(vault.add_site(grouped("A", name)), Err(VaultError::InvalidInput(_))), "{name}");
+    }
+    assert!(vault.add_site(grouped("A", &"x".repeat(MAX_GROUP_NAME))).is_ok());
+
+    vault.add_site(grouped("B", "Switches")).unwrap();
+    for to in ["", "  ", "No group", long.as_str()] {
+        assert!(matches!(vault.rename_group("Switches", to), Err(VaultError::InvalidInput(_))), "{to:?}");
+    }
+    assert!(matches!(vault.rename_group("Nothing", "X"), Err(VaultError::InvalidInput(_))));
+    assert!(matches!(vault.remove_group("Nothing"), Err(VaultError::InvalidInput(_))));
+}
+
+#[test]
+fn renaming_a_group_moves_all_its_sites_and_keeps_their_passwords() {
+    let mut vault = Vault::open_in_memory(&InsecureTestProtector).unwrap();
+    let a = vault.add_site(grouped("A", "Switches")).unwrap();
+    vault.add_site(grouped("B", "Switches")).unwrap();
+    vault.add_site(grouped("C", "Servers")).unwrap();
+
+    assert_eq!(vault.rename_group("switches", " Core switches ").unwrap(), 2);
+    assert_eq!(
+        groups_of(&vault),
+        vec![
+            ("A".to_string(), Some("Core switches".to_string())),
+            ("B".to_string(), Some("Core switches".to_string())),
+            ("C".to_string(), Some("Servers".to_string())),
+        ]
+    );
+    assert_eq!(vault.reveal_password(a).unwrap().expose_secret(), "Group-Pa55");
+}
+
+/// Renaming to another group's name makes the two one group, spelled
+/// like the one that was already there.
+#[test]
+fn renaming_onto_an_existing_group_merges_them() {
+    let mut vault = Vault::open_in_memory(&InsecureTestProtector).unwrap();
+    vault.add_site(grouped("A", "Switches")).unwrap();
+    vault.add_site(grouped("B", "Servers")).unwrap();
+
+    assert_eq!(vault.rename_group("Switches", "servers").unwrap(), 1);
+    let groups: Vec<_> = groups_of(&vault).into_iter().map(|(_, g)| g).collect();
+    assert_eq!(groups, vec![Some("Servers".to_string()), Some("Servers".to_string())]);
+
+    // Changing only the capitals of a group is a rename, not a merge.
+    assert_eq!(vault.rename_group("Servers", "SERVERS").unwrap(), 2);
+    assert!(groups_of(&vault).iter().all(|(_, g)| g.as_deref() == Some("SERVERS")));
+}
+
+#[test]
+fn removing_a_group_keeps_its_sites() {
+    let mut vault = Vault::open_in_memory(&InsecureTestProtector).unwrap();
+    let a = vault.add_site(grouped("A", "Switches")).unwrap();
+    vault.add_site(grouped("B", "Switches")).unwrap();
+    vault.add_site(grouped("C", "Servers")).unwrap();
+
+    assert_eq!(vault.remove_group("Switches").unwrap(), 2);
+    assert_eq!(
+        groups_of(&vault),
+        vec![("C".to_string(), Some("Servers".to_string())), ("A".to_string(), None), ("B".to_string(), None)]
+    );
+    assert_eq!(vault.reveal_password(a).unwrap().expose_secret(), "Group-Pa55");
+}
+
 #[test]
 fn optional_text_is_trimmed_and_empty_becomes_none() {
     let mut vault = Vault::open_in_memory(&InsecureTestProtector).unwrap();

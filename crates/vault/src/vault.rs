@@ -77,6 +77,7 @@ impl Vault {
         // the insert. So: insert with an empty ciphertext, encrypt, update,
         // all in one transaction so the empty value is never committed.
         let tx = self.conn.transaction()?;
+        let group = settle_group(&tx, site.group_name, None)?;
         tx.execute(
             &format!(
                 "INSERT INTO sites (name, group_name, login_url, origin, username, password_ct, password_nonce,
@@ -86,7 +87,7 @@ impl Vault {
             ),
             params![
                 site.name.trim(),
-                clean(site.group_name),
+                group,
                 site.login_url.trim(),
                 origin,
                 site.username,
@@ -118,6 +119,7 @@ impl Vault {
         };
 
         let tx = self.conn.transaction()?;
+        let group = settle_group(&tx, update.group_name, Some(id))?;
         let changed = tx.execute(
             &format!(
                 "UPDATE sites SET name = ?1, group_name = ?2, login_url = ?3, origin = ?4, username = ?5,
@@ -127,7 +129,7 @@ impl Vault {
             ),
             params![
                 update.name.trim(),
-                clean(update.group_name),
+                group,
                 update.login_url.trim(),
                 origin,
                 update.username,
@@ -158,6 +160,55 @@ impl Vault {
             0 => Err(VaultError::NotFound(id)),
             _ => Ok(()),
         }
+    }
+
+    // ----- groups -----
+    //
+    // A group is the `group_name` label its sites share, not a row of its
+    // own. So a group exists while at least one site carries its name,
+    // and renaming or removing one means changing that label on every
+    // site in it. Both do so in one transaction: all of the sites change
+    // or none do.
+
+    /// Renames a group and returns how many sites moved. If another group
+    /// already has the new name (ignoring capitals), the two become one,
+    /// under that group's spelling.
+    pub fn rename_group(&mut self, from: &str, to: &str) -> Result<usize> {
+        let to = to.trim();
+        check_group_name(to)?;
+        let tx = self.conn.transaction()?;
+        let other: Option<String> = tx
+            .query_row(
+                "SELECT group_name FROM sites
+                 WHERE group_name = ?1 COLLATE NOCASE AND group_name <> ?2 COLLATE NOCASE
+                 ORDER BY id LIMIT 1",
+                params![to, from],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let target = other.as_deref().unwrap_or(to);
+        let moved = tx.execute(
+            &format!("UPDATE sites SET group_name = ?1, updated_at = {NOW} WHERE group_name = ?2 COLLATE NOCASE"),
+            params![target, from],
+        )?;
+        if moved == 0 {
+            return Err(VaultError::InvalidInput(format!("there is no group called \"{from}\"")));
+        }
+        tx.commit()?;
+        Ok(moved)
+    }
+
+    /// Removes a group: its sites are kept and have no group afterwards.
+    /// Returns how many sites that was.
+    pub fn remove_group(&mut self, name: &str) -> Result<usize> {
+        let moved = self.conn.execute(
+            &format!("UPDATE sites SET group_name = NULL, updated_at = {NOW} WHERE group_name = ?1 COLLATE NOCASE"),
+            params![name],
+        )?;
+        if moved == 0 {
+            return Err(VaultError::InvalidInput(format!("there is no group called \"{name}\"")));
+        }
+        Ok(moved)
     }
 
     /// All sites, grouped (sites without a group last), then by name.
@@ -290,6 +341,44 @@ fn validate(name: &str, login_url: &str, username: &str, recipe_id: &str) -> Res
         return Err(VaultError::InvalidInput("recipe is empty".into()));
     }
     normalize_origin(login_url)
+}
+
+/// The longest group name, in characters.
+pub const MAX_GROUP_NAME: usize = 40;
+
+/// Checks a (trimmed) group name.
+fn check_group_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        return Err(VaultError::InvalidInput("the group name is empty".into()));
+    }
+    if name.chars().count() > MAX_GROUP_NAME {
+        return Err(VaultError::InvalidInput(format!("a group name can be at most {MAX_GROUP_NAME} characters")));
+    }
+    // The list shows sites without a group under this heading.
+    if name.eq_ignore_ascii_case("no group") {
+        return Err(VaultError::InvalidInput("\"No group\" is where sites without a group are listed; pick another name".into()));
+    }
+    Ok(())
+}
+
+/// The group to store for a site: `None` for no group. If another site
+/// already has this group spelled with different capitals, that spelling
+/// is used, so "switches" and "Switches" can't become two groups.
+/// `except` is the site being edited, whose own old spelling doesn't count.
+///
+/// (`COLLATE NOCASE` compares ASCII letters without regard to case, which
+/// is all SQLite does without extra libraries.)
+fn settle_group(conn: &Connection, raw: Option<String>, except: Option<i64>) -> Result<Option<String>> {
+    let Some(name) = clean(raw) else { return Ok(None) };
+    check_group_name(&name)?;
+    let existing: Option<String> = conn
+        .query_row(
+            "SELECT group_name FROM sites WHERE group_name = ?1 COLLATE NOCASE AND id IS NOT ?2 ORDER BY id LIMIT 1",
+            params![name, except],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(Some(existing.unwrap_or(name)))
 }
 
 /// Optional text: trimmed, and empty becomes NULL.

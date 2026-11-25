@@ -116,6 +116,19 @@ async fn delete_site(state: State<'_, AppState>, id: i64) -> Result<(), String> 
     state.vault.with(|vault| vault.delete_site(id))
 }
 
+/// Renames a group (every site in it, in one step). Returns how many
+/// sites moved. Renaming onto another group's name merges the two.
+#[tauri::command]
+fn rename_group(state: State<'_, AppState>, from: String, to: String) -> Result<usize, String> {
+    state.vault.with(|vault| vault.rename_group(&from, &to))
+}
+
+/// Removes a group: its sites are kept and have no group afterwards.
+#[tauri::command]
+fn remove_group(state: State<'_, AppState>, name: String) -> Result<usize, String> {
+    state.vault.with(|vault| vault.remove_group(&name))
+}
+
 /// The "Trust this certificate" button: ticks the site's self-signed
 /// setting. The frontend then opens the site again.
 #[tauri::command]
@@ -376,6 +389,8 @@ fn main() -> std::process::ExitCode {
             update_site,
             delete_site,
             trust_certificate,
+            rename_group,
+            remove_group,
             list_recipes,
             open_site,
             list_sessions,

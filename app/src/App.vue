@@ -50,12 +50,32 @@ const list = ref(null);
 const selectedId = ref(null);
 // The right-click menu: { x, y, items } or null.
 const menu = ref(null);
-// A small dialog: { kind: 'delete', site } or { kind: 'rename', from, to }.
+// A small dialog, by `kind`:
+//   delete   { site }             confirm deleting a site
+//   rename   { from, to, error }  rename a group
+//   ungroup  { name }             confirm removing a group (its sites are kept)
+//   newgroup { site, to, error }  move a site to a group that doesn't exist yet
 const dialog = ref(null);
 // Read out by screen readers when it changes (see the template's last lines).
 const announcement = ref('');
 
-const groupNames = computed(() => [...new Set(sites.value.map((s) => s.group_name).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
+// One entry per group, whatever the capitals (the vault keeps one
+// spelling per group; older data may not).
+const groupNames = computed(() => {
+  const seen = new Map();
+  for (const site of sites.value) {
+    if (site.group_name && !seen.has(site.group_name.toLowerCase())) seen.set(site.group_name.toLowerCase(), site.group_name);
+  }
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
+});
+const sameName = (a, b) => (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
+const sitesIn = (name) => sites.value.filter((s) => sameName(s.group_name, name));
+// While renaming: the other group that already has the typed name, if
+// any. Renaming onto it merges the two.
+const mergeInto = computed(() => {
+  if (dialog.value?.kind !== 'rename' || sameName(dialog.value.to, dialog.value.from)) return null;
+  return groupNames.value.find((g) => sameName(g, dialog.value.to)) ?? null;
+});
 const openCount = computed(() => Object.keys(sessions).length);
 
 // The list's rows: the chosen filter, narrowed by the search box.
@@ -291,24 +311,60 @@ async function save(fields) {
   flash(`${editing ? 'Saved' : 'Added'} ${saved.name}`);
 }
 
-// Changing a site's group, or renaming a group, saves each site with the
-// new name. A missing password keeps the stored one.
-async function setGroup(rows, to, done) {
-  try {
-    for (const site of rows) await api.updateSite(site.id, { ...site, group_name: to, password: null });
-    flash(done);
-  } catch (e) {
-    loadError.value = String(e);
-  }
+// Moves one site to a group (null for none). A missing password keeps
+// the stored one. Throws with the vault's message on failure.
+async function moveToGroup(site, to, done) {
+  await api.updateSite(site.id, { ...site, group_name: to, password: null });
   await reload();
+  flash(done);
 }
+function moveFromMenu(site, to, done) {
+  moveToGroup(site, to, done).catch((e) => (loadError.value = String(e)));
+}
+
+// Group names never start with "invalid input: " for the admin.
+const plain = (e) => String(e).replace(/^invalid input: /, '');
 
 async function finishRename() {
   const { from, to } = dialog.value;
-  dialog.value = null;
   const name = to.trim();
-  if (!name || name === from) return;
-  await setGroup(sites.value.filter((s) => s.group_name === from), name, `Renamed ${from} to ${name}`);
+  if (!name || name === from) return (dialog.value = null);
+  const merged = mergeInto.value;
+  try {
+    // One step in the vault: every site in the group changes, or none.
+    await api.renameGroup(from, name);
+  } catch (e) {
+    dialog.value.error = plain(e);
+    return;
+  }
+  dialog.value = null;
+  list.value?.groupRenamed(from, merged ?? name);
+  await reload();
+  flash(merged ? `Merged ${from} into ${merged}` : `Renamed ${from} to ${name}`);
+}
+
+async function finishUngroup() {
+  const { name } = dialog.value;
+  dialog.value = null;
+  try {
+    const moved = await api.removeGroup(name);
+    await reload();
+    flash(`Removed the group ${name}. ${moved} ${moved === 1 ? 'site is' : 'sites are'} now under No group.`);
+  } catch (e) {
+    loadError.value = plain(e);
+  }
+}
+
+async function finishNewGroup() {
+  const { site, to } = dialog.value;
+  const name = to.trim();
+  if (!name) return (dialog.value = null);
+  try {
+    await moveToGroup(site, name, `Moved ${site.name} to ${name}`);
+    dialog.value = null;
+  } catch (e) {
+    dialog.value.error = plain(e);
+  }
 }
 
 async function remove() {
@@ -344,8 +400,9 @@ function siteMenu({ site, x, y }) {
       label: 'Move to group',
       icon: 'move',
       children: [
-        ...groupNames.value.filter((g) => g !== site.group_name).map((g) => ({ label: g, action: () => setGroup([site], g, `Moved ${site.name} to ${g}`) })),
-        { label: 'No group', disabled: !site.group_name, action: () => setGroup([site], null, `Removed ${site.name} from its group`) },
+        ...groupNames.value.filter((g) => !sameName(g, site.group_name)).map((g) => ({ label: g, action: () => moveFromMenu(site, g, `Moved ${site.name} to ${g}`) })),
+        { label: 'No group', disabled: !site.group_name, action: () => moveFromMenu(site, null, `Removed ${site.name} from its group`) },
+        { label: 'New group…', action: () => (dialog.value = { kind: 'newgroup', site, to: '', error: '' }) },
       ],
     },
   ];
@@ -359,11 +416,22 @@ function siteMenu({ site, x, y }) {
   menu.value = { x, y, items };
 }
 
+// "No group" is a heading, not a group: there is nothing to rename or remove.
+function renameGroup(name) {
+  if (name) dialog.value = { kind: 'rename', from: name, to: name, error: '' };
+}
+function removeGroup(name) {
+  if (name) dialog.value = { kind: 'ungroup', name };
+}
+
 function groupMenu({ group: name, x, y }) {
   menu.value = {
     x,
     y,
-    items: [{ label: 'Rename group', icon: 'rename', disabled: !name, action: () => (dialog.value = { kind: 'rename', from: name, to: name }) }],
+    items: [
+      { label: 'Rename group', icon: 'rename', hint: 'F2', disabled: !name, action: () => renameGroup(name) },
+      { label: 'Remove group…', icon: 'dismiss', hint: 'Del', disabled: !name, action: () => removeGroup(name) },
+    ],
   };
 }
 
@@ -409,6 +477,8 @@ function closeMenu() {
         @delete="(site) => (dialog = { kind: 'delete', site })"
         @menu="siteMenu"
         @group-menu="groupMenu"
+        @rename-group="renameGroup"
+        @remove-group="removeGroup"
       />
 
       <div class="list-foot">
@@ -495,10 +565,39 @@ function closeMenu() {
     <Modal v-if="dialog?.kind === 'rename'" :title="`Rename ${dialog.from}`" @cancel="dialog = null" @submit="finishRename">
       <label class="field">
         <span>Group name</span>
-        <input v-model="dialog.to" autocomplete="off" />
+        <span>
+          <input v-model="dialog.to" :class="{ invalid: dialog.error }" maxlength="40" autocomplete="off" />
+          <span v-if="dialog.error" class="problem" role="alert">{{ dialog.error }}</span>
+          <span v-else-if="mergeInto" class="hint">{{ mergeInto }} already exists. Its sites and these become one group.</span>
+        </span>
       </label>
       <template #buttons>
-        <button type="submit" class="btn accent">Rename</button>
+        <button type="submit" class="btn accent">{{ mergeInto ? 'Merge groups' : 'Rename' }}</button>
+        <button type="button" class="btn outline" @click="dialog = null">Cancel</button>
+      </template>
+    </Modal>
+
+    <Modal v-if="dialog?.kind === 'ungroup'" :title="`Remove the group ${dialog.name}?`" @cancel="dialog = null" @submit="finishUngroup">
+      <p>
+        {{ sitesIn(dialog.name).length === 1 ? 'Its site is kept and moves' : `Its ${sitesIn(dialog.name).length} sites are kept and move` }}
+        to No group. Saved logins and open windows are not affected.
+      </p>
+      <template #buttons>
+        <button type="submit" class="btn accent">Remove group</button>
+        <button type="button" class="btn outline" @click="dialog = null">Cancel</button>
+      </template>
+    </Modal>
+
+    <Modal v-if="dialog?.kind === 'newgroup'" :title="`Move ${dialog.site.name} to a new group`" @cancel="dialog = null" @submit="finishNewGroup">
+      <label class="field">
+        <span>Group name</span>
+        <span>
+          <input v-model="dialog.to" :class="{ invalid: dialog.error }" maxlength="40" autocomplete="off" placeholder="Switches…" />
+          <span v-if="dialog.error" class="problem" role="alert">{{ dialog.error }}</span>
+        </span>
+      </label>
+      <template #buttons>
+        <button type="submit" class="btn accent">Move</button>
         <button type="button" class="btn outline" @click="dialog = null">Cancel</button>
       </template>
     </Modal>

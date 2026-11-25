@@ -32,7 +32,7 @@ pub use protect::Dpapi;
 #[cfg(any(test, feature = "insecure-test-protector"))]
 pub use protect::InsecureTestProtector;
 pub use protect::KeyProtector;
-pub use vault::{Vault, default_path};
+pub use vault::{MAX_GROUP_NAME, Vault, default_path};
 
 /// Everything that can go wrong in the vault. No variant ever carries a
 /// password: decryption failures say only that decryption failed.
