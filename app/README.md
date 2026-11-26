@@ -225,3 +225,12 @@ Events:
 - `update-progress`: `{ downloaded, total }` in bytes, while an update downloads.
 
 On Windows the vault key is protected with DPAPI. On other systems the app builds and starts, but shows "NetLaunch runs on Windows only".
+
+## App icon
+
+The icon is an Ethernet socket. Its drawings are in `src-tauri/icons/source/`:
+
+- `icon.svg` is used for 48 px and larger.
+- `icon-small.svg` is the same socket redrawn for 16, 24 and 32 px (one blue bar instead of five pins, on a 16-unit grid so edges land on whole pixels).
+
+The files Tauri uses (`32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.png`, and `icon.ico` with 16, 24, 32, 48, 64 and 256 px inside) were rendered from those two drawings. If you change a drawing, render each size from the matching SVG and rebuild `icon.ico`; `npx tauri icon` would shrink one picture for every size and lose the small-size drawing.

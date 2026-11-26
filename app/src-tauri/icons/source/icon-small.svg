@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!-- The same socket, redrawn for 16, 24 and 32 px: a bigger socket on
+       the tile and one blue bar instead of five pins, which would blur
+       into a smudge at that size. Shapes sit on a 16-unit grid, so at
+       16 px every edge lands on a whole pixel. -->
+  <rect x="0" y="0" width="256" height="256" rx="56" fill="#22324A"/>
+  <rect x="32" y="48" width="192" height="160" rx="16" fill="#fff"/>
+  <path d="M64 176v-64h32V80h64v32h32v64z" fill="#16212E"/>
+  <rect x="64" y="160" width="128" height="16" fill="#60CDFF"/>
+</svg>
